@@ -206,8 +206,10 @@ const fullCalendarEvents = computed(() => {
     start: e.allDay ? e.start.slice(0, 10) : e.start,
     end: e.allDay ? e.end.slice(0, 10) : e.end,
     allDay: e.allDay,
-    backgroundColor: e.color ?? calendarColors.value[e.calendarId],
-    borderColor: e.color ?? calendarColors.value[e.calendarId],
+    // FullCalendar v7 replaced backgroundColor/borderColor with a single
+    // `color` (surfaced as --fc-event-color) plus `contrastColor` for text.
+    color: e.color ?? calendarColors.value[e.calendarId],
+    contrastColor: '#fff',
     editable: !isReadOnlyEvent(e),
     extendedProps: { source: e },
   }))
