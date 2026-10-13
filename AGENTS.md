@@ -62,18 +62,26 @@ toolchain don't support TS7 yet:
 **Revisit both** when the upstreams ship TS7 support: drop
 `--legacy-peer-deps` and put `vue-tsc -b` back in front of `vite build`.
 
-**`@fullcalendar/*` pinned to `^6.1.21`** across all five packages.
-Dependabot PR #9 bumped only `core`/`vue3` to `7.0.2`; `daygrid`/
-`interaction`/`timegrid` have no stable v7 (only `-rc`), and FullCalendar
-requires one matched major across the family — the mixed set broke module
-resolution at build time. Reverting also required regenerating
-`package-lock.json` from scratch (a plain reinstall kept a stale nested
-`core@7.0.2`). Revisit when all the packages have a matching stable v7.
-`.github/dependabot.yml` now `ignore`s `@fullcalendar/*`
-`version-update:semver-major`, so the grouped PR stops re-proposing a
-half-family v7 bump every week; drop that ignore when bumping the family
-together. (The family is now seven packages — `list` and `multimonth`
-were added for the agenda/year views.)
+**FullCalendar is on v7** (`@fullcalendar/vue3@^7.1.2` + its required
+`temporal-polyfill` peer). v7 folded the plugins into the framework
+package -- `@fullcalendar/vue3/{daygrid,timegrid,interaction,list,multimonth}`
+-- and the standalone `@fullcalendar/daygrid` etc. stay at 6.1.21 for
+good, so they're no longer dependencies (`@fullcalendar/core` arrives
+transitively). Migration notes:
+- Callback types are renamed `*Arg` -> `*Info` and imported from
+  `@fullcalendar/vue3`; shapes (`revert`, `delta`, `el`, `jsEvent`,
+  `view`) are unchanged for what we use.
+- v7 injects no CSS: `CalendarView.vue` imports `skeleton.css` plus the
+  classic theme's `theme.css`/`palette.css` and registers
+  `classicThemePlugin`.
+- Rendered class names are hashed atomics, so `.fc-button` and friends are
+  gone. Overrides hang off our own classes attached via `*Class` options
+  (`buttonClass`, `dayCellTopInnerClass`, ...; v7 joins them with the
+  theme's), and the `--fc-classic-*` palette is remapped onto the app's
+  tokens under `:root:root` so dark mode follows `<html data-theme>`
+  without FullCalendar's own `colorScheme` option.
+- **Not yet eyeballed in a browser** (no browser on this host) -- check
+  every view in both themes, drag/resize, the "+more" popover, and print.
 
 ## Dev CalDAV servers (no Docker on this host)
 
@@ -628,8 +636,7 @@ Client-only, all in `CalendarView.vue` plus one new component.
 
 - **Agenda** (custom `listUpcoming` view, button "Agenda") and **Year**
   (`multiMonthYear`, button "Year") use FullCalendar plugins —
-  `@fullcalendar/list` + `@fullcalendar/multimonth`, both pinned at
-  `6.1.21` to match the rest of the `@fullcalendar/*` family (see the pin
+  `@fullcalendar/vue3/list` + `@fullcalendar/vue3/multimonth` (see the v7
   note above). Added to `plugins`, the `headerToolbar` right group, and
   `buttonText`/`views`. `noEventsText` set for the empty agenda case.
 - `listUpcoming` is a `type: 'list'` view whose `visibleRange` always

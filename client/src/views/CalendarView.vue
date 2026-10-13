@@ -1,12 +1,25 @@
 <script setup lang="ts">
-import type { CalendarOptions, DatesSetArg, DateSelectArg, EventClickArg, EventDropArg } from '@fullcalendar/core'
-import dayGridPlugin from '@fullcalendar/daygrid'
-import interactionPlugin from '@fullcalendar/interaction'
-import type { DateClickArg, EventResizeDoneArg } from '@fullcalendar/interaction'
-import listPlugin from '@fullcalendar/list'
-import multiMonthPlugin from '@fullcalendar/multimonth'
 import FullCalendar from '@fullcalendar/vue3'
-import timeGridPlugin from '@fullcalendar/timegrid'
+import type {
+  CalendarOptions,
+  DateClickInfo,
+  DateSelectInfo,
+  DatesSetInfo,
+  EventClickInfo,
+  EventDropInfo,
+  EventResizeDoneInfo,
+} from '@fullcalendar/vue3'
+import dayGridPlugin from '@fullcalendar/vue3/daygrid'
+import interactionPlugin from '@fullcalendar/vue3/interaction'
+import listPlugin from '@fullcalendar/vue3/list'
+import multiMonthPlugin from '@fullcalendar/vue3/multimonth'
+import timeGridPlugin from '@fullcalendar/vue3/timegrid'
+import classicThemePlugin from '@fullcalendar/vue3/themes/classic'
+// v7 no longer injects its own CSS. The palette variables are remapped onto
+// the app's theme tokens in the unscoped <style> block below.
+import '@fullcalendar/vue3/skeleton.css'
+import '@fullcalendar/vue3/themes/classic/theme.css'
+import '@fullcalendar/vue3/themes/classic/palette.css'
 import type { CalendarObject, EditScope, EventFields } from '@yourcal/shared'
 import { DateTime } from 'luxon'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -224,7 +237,7 @@ async function loadVisibleRange(): Promise<void> {
 // drives the sidebar mini-month so it follows the main calendar.
 const calendarDate = ref<string | null>(null)
 
-function onDatesSet(arg: DatesSetArg): void {
+function onDatesSet(arg: DatesSetInfo): void {
   currentViewType.value = arg.view.type
   visibleRange.value = { start: arg.start.toISOString(), end: arg.end.toISOString() }
   calendarDate.value = arg.view.currentStart.toISOString()
@@ -336,7 +349,7 @@ const pendingScopeAction = ref<
   | null
 >(null)
 
-function onEventClick(arg: EventClickArg): void {
+function onEventClick(arg: EventClickInfo): void {
   const rect = arg.el.getBoundingClientRect()
   detailEvent.value = arg.event.extendedProps.source as CalendarObject
   detailPosition.value = arg.jsEvent
@@ -380,7 +393,7 @@ function cancelPendingCreate(): void {
   }
 }
 
-function onSelect(arg: DateSelectArg): void {
+function onSelect(arg: DateSelectInfo): void {
   if (writableEnabledCalendarIds.value.length === 0) {
     errorBanner.value = 'No writable calendar is available -- enable or create one first.'
     return
@@ -406,7 +419,7 @@ function onSelect(arg: DateSelectArg): void {
   }, CREATE_DELAY_MS)
 }
 
-function onDateClick(arg: DateClickArg): void {
+function onDateClick(arg: DateClickInfo): void {
   const api = fullCalendarRef.value?.getApi()
 
   // Year view: a day click zooms into that month rather than creating an event.
@@ -624,7 +637,7 @@ function dropDateString(d: Date | null, allDay: boolean, fallback: string): stri
 // all-day event and an exclusive `end` otherwise, so deriving the new end
 // from `arg.event` alone collapses multi-day spans (and turns single-day
 // ones into a zero-length / previous-day event).
-function shiftAllDay(iso: string, delta: EventDropArg['delta']): string {
+function shiftAllDay(iso: string, delta: EventDropInfo['delta']): string {
   const moved = DateTime.fromISO(iso).plus({
     years: delta.years ?? 0,
     months: delta.months ?? 0,
@@ -674,7 +687,7 @@ function offerEditUndo(before: CalendarObject, newCalendarId: string, verb: stri
   })
 }
 
-async function onEventDrop(arg: EventDropArg): Promise<void> {
+async function onEventDrop(arg: EventDropInfo): Promise<void> {
   const event = arg.event.extendedProps.source as CalendarObject
   if (event.isRecurring) {
     // Dragging a recurring occurrence needs a scope choice; keep it simple
@@ -708,7 +721,7 @@ async function onEventDrop(arg: EventDropArg): Promise<void> {
   }
 }
 
-async function onEventResize(arg: EventResizeDoneArg): Promise<void> {
+async function onEventResize(arg: EventResizeDoneInfo): Promise<void> {
   const event = arg.event.extendedProps.source as CalendarObject
   if (event.isRecurring) {
     arg.revert()
@@ -741,7 +754,7 @@ async function onEventResize(arg: EventResizeDoneArg): Promise<void> {
 }
 
 const calendarOptions = computed<CalendarOptions>(() => ({
-  plugins: [dayGridPlugin, timeGridPlugin, interactionPlugin, listPlugin, multiMonthPlugin],
+  plugins: [classicThemePlugin, dayGridPlugin, timeGridPlugin, interactionPlugin, listPlugin, multiMonthPlugin],
   initialView: settingsStore.defaultView,
   views: {
     listUpcoming: listUpcomingView,
@@ -765,7 +778,7 @@ const calendarOptions = computed<CalendarOptions>(() => ({
   weekNumbers: settingsStore.weekNumbers,
   nowIndicator: settingsStore.nowIndicator,
   scrollTime: `${String(settingsStore.scrollHour).padStart(2, '0')}:00:00`,
-  slotLabelFormat: {
+  slotHeaderFormat: {
     hour: 'numeric',
     minute: '2-digit',
     hour12: settingsStore.timeFormat === '12h',
@@ -775,6 +788,15 @@ const calendarOptions = computed<CalendarOptions>(() => ({
     minute: '2-digit',
     hour12: settingsStore.timeFormat === '12h',
   },
+  // v7 renders hashed atomic class names, so the old .fc-* selectors are
+  // gone -- these hooks attach our own classes (joined with the theme's)
+  // for the overrides in the unscoped <style> block.
+  toolbarTitleClass: 'yc-fc-title',
+  buttonClass: (b) => ['yc-fc-button', b.isSelected && 'yc-fc-button-active'].filter(Boolean).join(' '),
+  dayHeaderInnerClass: 'yc-fc-day-header',
+  dayCellTopInnerClass: (d) => (d.isToday ? 'yc-fc-day-number yc-fc-today' : 'yc-fc-day-number'),
+  eventClass: 'yc-fc-event',
+  slotHeaderInnerClass: 'yc-fc-slot-label',
   editable: true,
   selectable: true,
   events: fullCalendarEvents.value,
@@ -1255,24 +1277,42 @@ watch(enabledSubscriptionIds, (ids, oldIds) => {
 
 <style>
 /* FullCalendar theme overrides -- unscoped since FullCalendar renders its
-   own markup outside Vue's scoping attribute reach. */
-.fc {
-  --fc-border-color: var(--color-border);
-  --fc-today-bg-color: var(--color-primary-soft);
-  --fc-neutral-bg-color: var(--color-surface-hover);
-  --fc-page-bg-color: var(--color-surface);
-  --fc-neutral-text-color: var(--color-text-muted);
-  --fc-list-event-hover-bg-color: var(--color-surface-hover);
-  --fc-now-indicator-color: var(--color-danger);
-  --fc-highlight-color: color-mix(in srgb, var(--color-primary) 18%, transparent);
+   own markup (and its popovers / drag mirror under <body>) outside Vue's
+   scoping attribute reach. The classic palette is remapped onto the app's
+   tokens, which already switch on <html data-theme>, so dark mode follows
+   without setting FullCalendar's own colorScheme option. :root:root outranks
+   palette.css's :root regardless of stylesheet order. */
+:root:root {
+  --fc-classic-button: var(--color-surface);
+  --fc-classic-button-border: var(--color-border-strong);
+  --fc-classic-button-strong: var(--color-primary);
+  --fc-classic-button-strong-border: var(--color-primary);
+  --fc-classic-button-outline: var(--color-primary-soft);
+  --fc-classic-button-foreground: var(--color-text);
+  --fc-classic-primary: var(--color-primary);
+  --fc-classic-primary-foreground: #fff;
+  --fc-classic-highlight: color-mix(in srgb, var(--color-primary) 18%, transparent);
+  --fc-classic-today: var(--color-primary-soft);
+  --fc-classic-now: var(--color-danger);
+  --fc-classic-background: var(--color-surface);
+  --fc-classic-faint: var(--color-surface-hover);
+  --fc-classic-muted: var(--color-surface-hover);
+  --fc-classic-strong: var(--color-border-strong);
+  --fc-classic-foreground: var(--color-text);
+  --fc-classic-faint-foreground: var(--color-text-faint);
+  --fc-classic-muted-foreground: var(--color-text-muted);
+  --fc-classic-border: var(--color-border);
+  --fc-classic-strong-border: var(--color-border-strong);
+}
+.calendar-card {
   font-family: var(--font-sans);
 }
-.fc .fc-toolbar-title {
+.calendar-card .yc-fc-title {
   font-size: 1.05rem;
   font-weight: 600;
   letter-spacing: -0.01em;
 }
-.fc .fc-button {
+.calendar-card .yc-fc-button {
   background: var(--color-surface);
   border: 1px solid var(--color-border-strong);
   color: var(--color-text);
@@ -1281,23 +1321,23 @@ watch(enabledSubscriptionIds, (ids, oldIds) => {
   font-weight: 500;
   padding: 0.35rem 0.7rem;
 }
-.fc .fc-button:hover {
+.calendar-card .yc-fc-button:hover {
   background: var(--color-surface-hover);
   color: var(--color-text);
 }
-.fc .fc-button:focus {
+.calendar-card .yc-fc-button:focus-visible {
   box-shadow: 0 0 0 3px var(--color-primary-soft);
 }
-.fc .fc-button-primary:not(:disabled).fc-button-active,
-.fc .fc-button-primary:not(:disabled):active {
+.calendar-card .yc-fc-button.yc-fc-button-active,
+.calendar-card .yc-fc-button:not(:disabled):active {
   background: var(--color-primary);
   border-color: var(--color-primary);
   color: white;
 }
-.fc .fc-button-primary:disabled {
+.calendar-card .yc-fc-button:disabled {
   opacity: 0.5;
 }
-.fc .fc-col-header-cell-cushion {
+.calendar-card .yc-fc-day-header {
   color: var(--color-text-muted);
   font-weight: 500;
   font-size: 0.78rem;
@@ -1305,26 +1345,21 @@ watch(enabledSubscriptionIds, (ids, oldIds) => {
   letter-spacing: 0.03em;
   padding: 0.5rem 0;
 }
-.fc .fc-daygrid-day-number {
+.calendar-card .yc-fc-day-number {
   color: var(--color-text-muted);
   font-size: 0.82rem;
   padding: 0.4rem;
 }
-.fc .fc-day-today .fc-daygrid-day-number {
+.calendar-card .yc-fc-day-number.yc-fc-today {
   color: var(--color-primary);
   font-weight: 600;
 }
-.fc-event {
-  border: none;
+.calendar-card .yc-fc-event {
   border-radius: 5px;
-  padding: 1px 5px;
   font-size: 0.8rem;
   font-weight: 500;
 }
-.fc-daygrid-event-dot {
-  border-color: currentColor;
-}
-.fc-timegrid-slot-label-cushion {
+.calendar-card .yc-fc-slot-label {
   color: var(--color-text-faint);
   font-size: 0.75rem;
 }
