@@ -51,7 +51,6 @@ import { useClipboardStore } from '../stores/clipboard.js'
 
 const listUpcomingView = {
   type: 'list',
-  buttonText: 'Agenda',
   visibleRange: () => {
     const start = new Date()
     start.setHours(0, 0, 0, 0)
@@ -766,8 +765,10 @@ const calendarOptions = computed<CalendarOptions>(() => ({
     center: 'title',
     right: 'multiMonthYear,dayGridMonth,timeGridWeek,timeGridDay,listUpcoming',
   },
-  buttonText: {
-    multiMonthYear: 'Year',
+  // v7 dropped the top-level/per-view `buttonText`; labels live in `buttons`.
+  buttons: {
+    multiMonthYear: { text: 'Year' },
+    listUpcoming: { text: 'Agenda' },
   },
   // The agenda view has nothing to show for an empty range -- spell that
   // out rather than leaving a bare gap.
