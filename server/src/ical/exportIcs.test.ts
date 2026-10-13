@@ -39,7 +39,7 @@ describe('mergeIcsObjects', () => {
     // instead, which is how the export route actually consumes this output.
     const comp = new ICAL.Component(ICAL.parse(merged))
     const summaries = comp.getAllSubcomponents('vevent').map((v) => v.getFirstPropertyValue('summary'))
-    expect(summaries.sort()).toEqual(['Event A', 'Event B'])
+    expect(summaries.map(String).sort((a, b) => a.localeCompare(b))).toEqual(['Event A', 'Event B'])
   })
 
   it('returns an empty-VCALENDAR wrapper for an empty list', () => {

@@ -73,7 +73,7 @@ describe('detectAuthMethod', () => {
 
   it('follows a /.well-known/caldav redirect to find the Digest endpoint (Baikal behind nginx)', async () => {
     vi.mocked(fetch).mockImplementation(async (input) => {
-      const url = String(input)
+      const url = input instanceof Request ? input.url : String(input)
       if (url.endsWith('/.well-known/caldav')) {
         return new Response('', { status: 302, headers: { location: '/dav.php/' } })
       }

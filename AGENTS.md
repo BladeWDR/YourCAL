@@ -42,14 +42,20 @@ new-event defaults, dark mode, auto-refresh.
 ## Toolchain pins
 
 **`typescript` is pinned to `^7.0.2`** (dependabot PR #9). Two parts of the
-toolchain don't support TS7 yet:
+toolchain didn't support TS7:
 
-- **`@typescript-eslint`** peer-caps at `typescript <6.1.0`
-  ([issue #10940](https://github.com/typescript-eslint/typescript-eslint/issues/10940),
-  "1-2 major releases" out). Workaround: CI runs `npm ci --legacy-peer-deps`.
-  Treat lint output with suspicion on TS7-only syntax. There's also no
-  `eslint.config.js` in the repo at all, so `npm run lint` currently fails
-  regardless — separate pre-existing gap.
+- **Lint is Oxlint, not ESLint.** typescript-eslint can't even load on TS7
+  (it needs the JS API TS 7.0 doesn't have; support is targeting TS 7.1 --
+  [#10940](https://github.com/typescript-eslint/typescript-eslint/issues/10940),
+  draft PR #12803), and the repo never had a working `eslint.config.js`
+  anyway. `npm run lint` is `oxlint --type-aware`, configured in
+  `.oxlintrc.json` (typescript/unicorn/oxc/vue plugins, `correctness`
+  category as errors). Type-aware rules run through `oxlint-tsgolint`,
+  which is built on typescript-go itself, so it works on TS7 natively.
+  Covers `.ts` and the `<script>` blocks of `.vue` files -- **not** Vue
+  template rules (no `eslint-plugin-vue` equivalent). CI runs it before
+  build. With typescript-eslint gone, `npm ci` no longer needs
+  `--legacy-peer-deps`.
 - **`vue-tsc`** hard-crashes on TS7 (`ERR_PACKAGE_PATH_NOT_EXPORTED` for
   `./lib/tsc`). Root cause: TS 7.0 ships **no JS API** at all
   (`require('typescript')` is just version info), and vue-tsc drives the

@@ -18,10 +18,10 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        # --legacy-peer-deps: typescript-eslint doesn't support TypeScript 7
-        # yet (peer dep caps at <6.1.0). See AGENTS.md "Toolchain: TypeScript
-        # 7 vs. @typescript-eslint" for why we're not pinning TS back down.
-        run: npm ci --legacy-peer-deps
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
 
       - name: Build
         run: npm run build

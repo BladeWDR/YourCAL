@@ -13,7 +13,7 @@ export const useSessionStore = defineStore('session', () => {
     try {
       info.value = await api.whoami()
       return true
-    } catch (err) {
+    } catch {
       info.value = null
       return false
     } finally {

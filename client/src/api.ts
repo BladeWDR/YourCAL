@@ -37,16 +37,17 @@ export class ApiRequestError extends Error {
 export const SESSION_EXPIRED_EVENT = 'yourcal:session-expired'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  // Normalised through Headers rather than object-spread, which silently
+  // mangles the Headers / [name, value][] forms of HeadersInit.
+  const headers = new Headers(init?.headers)
+  // A JSON content-type with no body (e.g. DELETE /session, which takes no
+  // request body) makes the browser reject the request outright -- only
+  // send it when there's actually a body to describe.
+  if (init?.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
   const res = await fetch(`/api${path}`, {
     ...init,
     credentials: 'include',
-    headers: {
-      // A JSON content-type with no body (e.g. DELETE /session, which
-      // takes no request body) makes the browser reject the request
-      // outright -- only send it when there's actually a body to describe.
-      ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
-      ...init?.headers,
-    },
+    headers,
   })
 
   if (!res.ok) {

@@ -21,10 +21,7 @@ COPY package.json package-lock.json tsconfig.base.json ./
 COPY shared/package.json shared/package.json
 COPY server/package.json server/package.json
 COPY client/package.json client/package.json
-# --legacy-peer-deps: typescript-eslint doesn't support TypeScript 7 yet
-# (peer dep caps at <6.1.0). See AGENTS.md "Toolchain: TypeScript 7 vs.
-# @typescript-eslint" for details.
-RUN npm ci --legacy-peer-deps
+RUN npm ci
 
 COPY shared shared
 COPY server server
@@ -34,7 +31,7 @@ RUN npm run build
 # Drop devDependencies (typescript, vite, vitest, tsx, ...) -- keeps
 # better-sqlite3's already-compiled native binary, since prune only
 # removes package entries, not rebuild anything.
-RUN npm prune --omit=dev --legacy-peer-deps
+RUN npm prune --omit=dev
 
 FROM node:26-bookworm-slim AS runtime
 WORKDIR /app
