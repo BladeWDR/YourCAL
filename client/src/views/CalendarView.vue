@@ -778,7 +778,7 @@ const calendarOptions = computed<CalendarOptions>(() => ({
   weekNumbers: settingsStore.weekNumbers,
   nowIndicator: settingsStore.nowIndicator,
   scrollTime: `${String(settingsStore.scrollHour).padStart(2, '0')}:00:00`,
-  slotLabelFormat: {
+  slotHeaderFormat: {
     hour: 'numeric',
     minute: '2-digit',
     hour12: settingsStore.timeFormat === '12h',
