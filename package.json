@@ -12,7 +12,7 @@
     "dev:client": "npm run dev -w client",
     "build": "npm run build -w shared && npm run build -w server && npm run build -w client",
     "test": "npm run test -w server",
-    "lint": "oxlint --type-aware"
+    "lint": "npm run build -w shared && oxlint --type-aware"
   },
   "devDependencies": {
     "oxlint": "^1.88.0",

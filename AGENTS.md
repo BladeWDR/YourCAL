@@ -54,7 +54,9 @@ toolchain didn't support TS7:
   which is built on typescript-go itself, so it works on TS7 natively.
   Covers `.ts` and the `<script>` blocks of `.vue` files -- **not** Vue
   template rules (no `eslint-plugin-vue` equivalent). CI runs it before
-  build. With typescript-eslint gone, `npm ci` no longer needs
+  build. The script builds `shared` first: its types resolve from
+  `shared/dist`, and without them type-aware rules see `error` types and
+  fail. With typescript-eslint gone, `npm ci` no longer needs
   `--legacy-peer-deps`.
 - **`vue-tsc`** hard-crashes on TS7 (`ERR_PACKAGE_PATH_NOT_EXPORTED` for
   `./lib/tsc`). Root cause: TS 7.0 ships **no JS API** at all
