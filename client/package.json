@@ -9,16 +9,11 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@fullcalendar/core": "^6.1.21",
-    "@fullcalendar/daygrid": "^6.1.15",
-    "@fullcalendar/interaction": "^6.1.15",
-    "@fullcalendar/list": "^6.1.21",
-    "@fullcalendar/multimonth": "^6.1.21",
-    "@fullcalendar/timegrid": "^6.1.15",
-    "@fullcalendar/vue3": "^6.1.21",
+    "@fullcalendar/vue3": "^7.1.2",
     "@yourcal/shared": "*",
     "luxon": "^3.5.0",
     "pinia": "^4.0.2",
+    "temporal-polyfill": "^1.0.5",
     "vue": "^3.5.43",
     "vue-router": "^5.3.1"
   },
