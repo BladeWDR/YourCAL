@@ -32,7 +32,7 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
 
     req.session.set('dav', { baseUrl: serverUrl, username, password, authMethod })
 
-    const info: SessionInfo = { serverUrl, username, defaultTimezone: config.defaultTimezone }
+    const info: SessionInfo = { serverUrl, username, defaultTimezone: config.defaultTimezone, version: config.version }
     return reply.code(201).send(info)
   })
 
@@ -41,7 +41,7 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
     if (!dav) {
       return reply.code(401).send({ error: 'not_authenticated', message: 'No active session' })
     }
-    const info: SessionInfo = { serverUrl: dav.baseUrl, username: dav.username, defaultTimezone: config.defaultTimezone }
+    const info: SessionInfo = { serverUrl: dav.baseUrl, username: dav.username, defaultTimezone: config.defaultTimezone, version: config.version }
     return reply.send(info)
   })
 

@@ -821,3 +821,12 @@ split out.
   downgraded.
 - Whoever has Docker should `docker compose up --build` and run at least a
   login + one calendar read/write through it.
+
+## Version display
+
+The running release shows as "Version …" in the settings dialog footer
+(`SessionInfo.version`, from `config.version`). It's the `APP_VERSION`
+env var, baked in by the Dockerfile `APP_VERSION` build arg: CI passes the
+git tag (`v0.4.0`) for tag builds and `dev` for `main`/dispatch builds.
+Unset (local `npm run dev`) also means `dev`. There's no `.git` in the
+image (`.dockerignore`), so it can't be derived from `git describe` there.
