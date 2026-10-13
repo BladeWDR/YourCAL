@@ -51,16 +51,23 @@ toolchain don't support TS7 yet:
   `eslint.config.js` in the repo at all, so `npm run lint` currently fails
   regardless — separate pre-existing gap.
 - **`vue-tsc`** hard-crashes on TS7 (`ERR_PACKAGE_PATH_NOT_EXPORTED` for
-  `./lib/tsc`, removed in TS7 —
-  [vuejs/language-tools#6124](https://github.com/vuejs/language-tools/issues/6124),
-  [#5381](https://github.com/vuejs/language-tools/issues/5381)). Workaround:
-  `client`'s `build` script is just `vite build`; type-checking moved to a
-  separate `npm run typecheck -w client` that **nothing runs automatically**
-  — client type errors are caught by neither `build` nor CI until this is
-  revisited.
+  `./lib/tsc`). Root cause: TS 7.0 ships **no JS API** at all
+  (`require('typescript')` is just version info), and vue-tsc drives the
+  JS compiler. Real support waits on TS 7.1's new API
+  ([vuejs/language-tools#6170](https://github.com/vuejs/language-tools/pull/6170),
+  draft; #6124/#5381 are closed but did *not* fix this). Workaround, per
+  Microsoft's "run 6.0 side by side" guidance: `client`'s `typescript`
+  devDependency is aliased to `npm:typescript@~6.0.3` (nested under
+  `client/node_modules`; the root/server TS7 stays hoisted), and
+  `client/scripts/vue-tsc.cjs` calls `vue-tsc`'s `run()` with an explicit
+  path to that TS6 `tsc` -- a bare `vue-tsc` is hoisted to the root and
+  would resolve TS7 (npm `overrides` can't redirect it: `typescript` is a
+  *peer* of vue-tsc). `client`'s `build` is `typecheck && vite build`
+  again, so CI type-checks the client. Vite itself never uses `tsc`, so
+  TS6 here only affects type-checking.
 
-**Revisit both** when the upstreams ship TS7 support: drop
-`--legacy-peer-deps` and put `vue-tsc -b` back in front of `vite build`.
+**Revisit** when vue-tsc ships TS7 support: drop the alias and the
+wrapper script, and go back to plain `vue-tsc -b`.
 
 **`@fullcalendar/*` pinned to `^6.1.21`** across all five packages.
 Dependabot PR #9 bumped only `core`/`vue3` to `7.0.2`; `daygrid`/
