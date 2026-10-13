@@ -248,12 +248,30 @@ browser-session cookie regardless of the payload TTL.
 session (`DavContext.authMethod`, absent ⇒ Basic). All CalDAV traffic goes
 through `dav/auth.ts` `davFetch`: Basic just attaches the header; Digest
 (RFC 2617/7616, MD5/`-sess`/SHA-256, `qop=auth`) does the 401
-challenge/response, negotiating a **fresh challenge on every request**
-(a probe for body-optional methods, else the real request unauthenticated
-first) -- a per-host challenge cache was tried and dropped because stale
-nonces turned into unrecoverable 401 loops. So every Digest request costs
-an extra round trip. It's wired in as tsdav's `fetch` override and used
+challenge/response and **caches the negotiated challenge per credentials +
+origin** (sha256 of origin/username/password, 10-minute idle TTL), reusing
+it with an incrementing `nc` -- so a Digest request normally costs one
+round trip, no probe. A refused cached nonce (stale, expired, server lost
+its nonce state) is dropped and renegotiated **exactly once** from that
+401's own challenge; if the renegotiated one is refused too, that's a
+`DavAuthError`, never another retry. `-sess` algorithms keep the entry's
+cnonce fixed. History: an earlier per-*origin* cache was dropped because a
+nonce left over from a failed login in the same process caused an
+unrecoverable 401 loop; keying on the password plus the one-retry rule
+rules that out (unit-tested, and a wrong-then-right login against Baikal
+works). Without a cached challenge it falls back to the handshake: a
+bodyless probe for body-optional methods, else the real request
+unauthenticated first. It's wired in as tsdav's `fetch` override and used
 directly by the raw sharing/PROPPATCH fetches.
+
+Measured against Digest-only Baikal (requests per action, before -> after
+the cache): list calendars 11 -> 6, create event 13 -> 7, edit/delete
+15 -> 8; steady-state traffic has no 401s at all. Baikal (sabre) appears
+not to expire nonces -- a Baikal restart mid-session didn't produce a
+single 401 -- so the refused-cached-nonce path is covered only by unit
+tests, not by a real server. (Each listing also sends one `POST` that
+Baikal answers 501 -- apparently the Radicale-only `/.sharing/v1/map/list`
+lookup; wasted but harmless.)
 
 **tsdav ≥ 2.4.0 has real Digest support** (dependabot #60), and with
 `authMethod: 'Basic'` or `'Digest'` it wraps the `fetch` override in its
@@ -263,10 +281,11 @@ requests instead of 3; mid-session password change: 4 per request instead
 of 2). So `createClient` uses `authMethod: 'Custom'` with an
 `authFunction` returning no headers: tsdav neither wraps the fetch nor
 pre-attaches a header, and `davFetch` is the only auth layer. Works on
-tsdav 2.3.5 and 2.4.0. (Letting tsdav do Digest itself for its own
-requests -- it caches the challenge, saving `davFetch`'s extra round trip
--- is being evaluated separately; the raw sharing/PROPPATCH calls would
-still need `davFetch`, since tsdav doesn't export its Digest fetch.)
+tsdav 2.3.5 and 2.4.0. Letting tsdav do Digest itself was tried and
+rejected: it saved fewer requests than the `davFetch` cache (it can't
+cover the raw calls -- tsdav doesn't export its Digest fetch), its auth
+failures are untyped errors (so mid-session failures went back to 500),
+and it would have meant two Digest implementations.
 
 **Rejected credentials mid-session** (password changed, account
 disabled): `davFetch` throws `DavAuthError` when an authenticated request

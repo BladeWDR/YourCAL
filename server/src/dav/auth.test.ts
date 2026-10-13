@@ -1,10 +1,34 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { buildDigestHeader, DavAuthError, davFetch, detectAuthMethod, parseDigestChallenge } from './auth.js'
+import {
+  buildDigestHeader,
+  clearDigestChallengeCache,
+  DavAuthError,
+  davFetch,
+  detectAuthMethod,
+  parseDigestChallenge,
+} from './auth.js'
 import type { DavContext } from './context.js'
 
 beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn())
+  clearDigestChallengeCache()
 })
+
+const digestCtx = (host: string, password = 'secret'): DavContext => ({
+  baseUrl: `https://${host}/`,
+  username: 'alice',
+  password,
+  authMethod: 'Digest',
+})
+
+const challengeRes = (nonce: string, extra = ''): Response =>
+  new Response('', {
+    status: 401,
+    headers: { 'www-authenticate': `Digest realm="R", nonce="${nonce}", qop="auth"${extra}` },
+  })
+
+const authHeaderOf = (call: number): string =>
+  new Headers(vi.mocked(fetch).mock.calls[call][1]?.headers).get('Authorization') ?? ''
 
 describe('parseDigestChallenge', () => {
   it('parses a sabre/dav-style challenge with quoted params', () => {
@@ -134,32 +158,105 @@ describe('davFetch', () => {
     expect(auth).toContain('uri="/dav/cal/"')
   })
 
-  it('negotiates a fresh challenge on every call (no cross-call nonce reuse)', async () => {
-    const ctx: DavContext = {
-      baseUrl: 'https://d2.example.com/',
-      username: 'alice',
-      password: 'secret',
-      authMethod: 'Digest',
-    }
-    const challenge = (nonce: string): Response =>
-      new Response('', { status: 401, headers: { 'www-authenticate': `Digest realm="R", nonce="${nonce}", qop="auth"` } })
-
+  it('reuses the negotiated challenge with an incrementing nc, skipping the probe', async () => {
+    const ctx = digestCtx('d2.example.com')
     vi.mocked(fetch)
-      .mockResolvedValueOnce(challenge('N1')) // call A: probe
+      .mockResolvedValueOnce(challengeRes('N1')) // call A: probe
       .mockResolvedValueOnce(new Response('ok', { status: 200 })) // call A: auth
-      .mockResolvedValueOnce(challenge('N2')) // call B: probe
-      .mockResolvedValueOnce(new Response('ok', { status: 200 })) // call B: auth
+      .mockResolvedValueOnce(new Response('ok', { status: 200 })) // call B: cached auth
+      .mockResolvedValueOnce(new Response('ok', { status: 200 })) // call C: cached auth
 
     await davFetch(ctx, 'https://d2.example.com/a/', { method: 'PROPFIND' })
     await davFetch(ctx, 'https://d2.example.com/b/', { method: 'PROPFIND' })
+    await davFetch(ctx, 'https://d2.example.com/c/', { method: 'REPORT', body: '<report/>' })
 
     expect(fetch).toHaveBeenCalledTimes(4)
-    const authA = new Headers(vi.mocked(fetch).mock.calls[1][1]?.headers).get('Authorization') ?? ''
-    const authB = new Headers(vi.mocked(fetch).mock.calls[3][1]?.headers).get('Authorization') ?? ''
-    expect(authA).toContain('nonce="N1"')
-    expect(authA).toContain('nc=00000001')
-    expect(authB).toContain('nonce="N2"')
-    expect(authB).toContain('nc=00000001')
+    expect(authHeaderOf(1)).toContain('nonce="N1"')
+    expect(authHeaderOf(1)).toContain('nc=00000001')
+    expect(authHeaderOf(2)).toContain('nonce="N1"')
+    expect(authHeaderOf(2)).toContain('nc=00000002')
+    expect(authHeaderOf(2)).toContain('uri="/b/"')
+    expect(authHeaderOf(3)).toContain('nc=00000003')
+    expect((vi.mocked(fetch).mock.calls[3][1] as { body?: unknown }).body).toBe('<report/>')
+  })
+
+  it('renegotiates once from the 401 when the cached nonce is refused (stale / expired)', async () => {
+    const ctx = digestCtx('d5.example.com')
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(challengeRes('N1')) // call A: probe
+      .mockResolvedValueOnce(new Response('ok', { status: 200 })) // call A: auth
+      .mockResolvedValueOnce(challengeRes('N2', ', stale=true')) // call B: cached N1 refused
+      .mockResolvedValueOnce(new Response('ok', { status: 200 })) // call B: auth with N2
+      .mockResolvedValueOnce(new Response('ok', { status: 200 })) // call C: cached N2
+
+    await davFetch(ctx, 'https://d5.example.com/a/', { method: 'PROPFIND' })
+    const res = await davFetch(ctx, 'https://d5.example.com/b/', { method: 'PUT', body: 'ICS' })
+    await davFetch(ctx, 'https://d5.example.com/c/', { method: 'PROPFIND' })
+
+    expect(res.status).toBe(200)
+    expect(fetch).toHaveBeenCalledTimes(5)
+    expect(authHeaderOf(2)).toContain('nonce="N1"')
+    expect(authHeaderOf(3)).toContain('nonce="N2"')
+    expect(authHeaderOf(3)).toContain('nc=00000001')
+    expect((vi.mocked(fetch).mock.calls[3][1] as { body?: unknown }).body).toBe('ICS')
+    expect(authHeaderOf(4)).toContain('nonce="N2"')
+    expect(authHeaderOf(4)).toContain('nc=00000002')
+  })
+
+  it('throws DavAuthError (no retry loop) when the renegotiated challenge is refused too', async () => {
+    const ctx = digestCtx('d6.example.com')
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(challengeRes('N1')) // call A: probe
+      .mockResolvedValueOnce(new Response('ok', { status: 200 })) // call A: auth
+      .mockResolvedValueOnce(challengeRes('N2')) // call B: cached N1 refused
+      .mockResolvedValueOnce(challengeRes('N3')) // call B: N2 refused -> credentials bad
+      .mockResolvedValueOnce(challengeRes('N4')) // call C: probe (cache was dropped)
+      .mockResolvedValueOnce(new Response('ok', { status: 200 })) // call C: auth
+
+    await davFetch(ctx, 'https://d6.example.com/a/', { method: 'PROPFIND' })
+    await expect(davFetch(ctx, 'https://d6.example.com/b/', { method: 'PROPFIND' })).rejects.toBeInstanceOf(
+      DavAuthError,
+    )
+    expect(fetch).toHaveBeenCalledTimes(4)
+
+    // Nothing stale was left behind: the next call negotiates from scratch.
+    await davFetch(ctx, 'https://d6.example.com/c/', { method: 'PROPFIND' })
+    expect(fetch).toHaveBeenCalledTimes(6)
+    expect(new Headers(vi.mocked(fetch).mock.calls[4][1]?.headers).has('Authorization')).toBe(false)
+    expect(authHeaderOf(5)).toContain('nonce="N4"')
+  })
+
+  it('never reuses a challenge across different credentials', async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(challengeRes('N1')) // wrong password: probe
+      .mockResolvedValueOnce(challengeRes('N2')) // wrong password: refused
+      .mockResolvedValueOnce(challengeRes('N3')) // right password: probe
+      .mockResolvedValueOnce(new Response('ok', { status: 200 })) // right password: auth
+
+    await expect(
+      davFetch(digestCtx('d7.example.com', 'wrong'), 'https://d7.example.com/', { method: 'PROPFIND' }),
+    ).rejects.toBeInstanceOf(DavAuthError)
+    const res = await davFetch(digestCtx('d7.example.com'), 'https://d7.example.com/', { method: 'PROPFIND' })
+
+    expect(res.status).toBe(200)
+    expect(fetch).toHaveBeenCalledTimes(4)
+    expect(new Headers(vi.mocked(fetch).mock.calls[2][1]?.headers).has('Authorization')).toBe(false)
+    expect(authHeaderOf(3)).toContain('nonce="N3"')
+  })
+
+  it('keeps the cnonce fixed across reuse for -sess algorithms', async () => {
+    const ctx = digestCtx('d8.example.com')
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(challengeRes('N1', ', algorithm=MD5-sess'))
+      .mockResolvedValueOnce(new Response('ok', { status: 200 }))
+      .mockResolvedValueOnce(new Response('ok', { status: 200 }))
+
+    await davFetch(ctx, 'https://d8.example.com/a/', { method: 'PROPFIND' })
+    await davFetch(ctx, 'https://d8.example.com/b/', { method: 'PROPFIND' })
+
+    const cnonceOf = (h: string): string | undefined => /cnonce="([^"]+)"/.exec(h)?.[1]
+    expect(cnonceOf(authHeaderOf(1))).toBeDefined()
+    expect(cnonceOf(authHeaderOf(2))).toBe(cnonceOf(authHeaderOf(1)))
   })
 
   it('throws DavAuthError when a Basic request is rejected', async () => {
