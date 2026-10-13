@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { DAVClient } from 'tsdav'
-import { davFetch } from './auth.js'
+import { DavAuthError, davFetch } from './auth.js'
 import type { DavContext } from './context.js'
 
 // createClient's login() runs full CalDAV discovery (well-known -> principal
@@ -46,22 +46,39 @@ export async function createClient(ctx: DavContext): Promise<DAVClient> {
     return cached.client
   }
 
+  // tsdav's discovery catches fetch errors and moves on to other candidate
+  // URLs, so a DavAuthError thrown during login() resurfaces as a generic
+  // "cannot find principalUrl". Remember it and rethrow the real cause.
+  let authRejected = false
   const client = new DAVClient({
     serverUrl: ctx.baseUrl,
     credentials: {
       username: ctx.username,
       password: ctx.password,
     },
-    // tsdav's own 'Digest' mode is a stub (a pre-baked static string, no
-    // nonce/nc/qop handling). Instead every request goes through davFetch,
-    // which does the real Basic-or-Digest handshake per request; the
-    // authMethod here only controls the (redundant, harmless) header tsdav
-    // pre-attaches, so 'Basic' is fine for both.
-    authMethod: 'Basic',
+    // Auth is entirely davFetch's job (Basic header, or the Digest
+    // handshake per request). 'Custom' with no headers keeps tsdav out of
+    // it: with 'Basic' or 'Digest', tsdav >= 2.4.0 wraps the fetch override
+    // in its own Digest layer, which retries rejected credentials on top of
+    // davFetch's and doubles failed attempts against the server.
+    authMethod: 'Custom',
+    authFunction: async () => ({}),
     defaultAccountType: 'caldav',
-    fetch: (input: string | URL | Request, init?: RequestInit) => davFetch(ctx, input, init),
+    fetch: async (input: string | URL | Request, init?: RequestInit) => {
+      try {
+        return await davFetch(ctx, input, init)
+      } catch (err) {
+        if (err instanceof DavAuthError) authRejected = true
+        throw err
+      }
+    },
   })
-  await client.login()
+  try {
+    await client.login()
+  } catch (err) {
+    if (authRejected) throw new DavAuthError()
+    throw err
+  }
 
   cache.set(key, { client, expiresAt: Date.now() + CLIENT_TTL_MS })
   return client

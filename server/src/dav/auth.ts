@@ -3,6 +3,26 @@ import type { DavContext } from './context.js'
 
 export type AuthMethod = 'Basic' | 'Digest'
 
+/**
+ * The CalDAV server answered an authenticated request with 401: the stored
+ * credentials no longer work (password changed, account disabled, auth
+ * scheme switched). Thrown from davFetch so every caller -- tsdav and the
+ * raw sharing/PROPPATCH fetches alike -- fails the same way, and the error
+ * handler turns it into an app-level 401 that ends the session.
+ */
+export class DavAuthError extends Error {
+  constructor() {
+    super('The CalDAV server rejected the stored credentials')
+    this.name = 'DavAuthError'
+  }
+}
+
+async function rejectIfUnauthorized(res: Response): Promise<Response> {
+  if (res.status !== 401) return res
+  await res.body?.cancel().catch(() => {})
+  throw new DavAuthError()
+}
+
 export function basicAuthHeader(ctx: DavContext): Record<string, string> {
   return { Authorization: 'Basic ' + Buffer.from(`${ctx.username}:${ctx.password}`).toString('base64') }
 }
@@ -172,7 +192,7 @@ export async function davFetch(
   init?: RequestInit,
 ): Promise<Response> {
   if (ctx.authMethod !== 'Digest') {
-    return fetch(input, withAuthHeader(init, basicAuthHeader(ctx).Authorization))
+    return rejectIfUnauthorized(await fetch(input, withAuthHeader(init, basicAuthHeader(ctx).Authorization)))
   }
 
   const url = targetUrl(input)
@@ -202,11 +222,13 @@ export async function davFetch(
     const res = await fetch(input, init)
     if (res.status !== 401) return res
     challenge = parseDigestChallenge(res.headers.get('www-authenticate') ?? '')
-    if (!challenge) return res
+    // 401 with no Digest challenge: the server no longer offers the scheme
+    // this session negotiated at login.
+    if (!challenge) return rejectIfUnauthorized(res)
     await res.body?.cancel().catch(() => {})
   }
 
   const cnonce = randomBytes(16).toString('hex')
   const header = buildDigestHeader(ctx, { method, uri, challenge, nc: 1, cnonce })
-  return fetch(input, withAuthHeader(init, header))
+  return rejectIfUnauthorized(await fetch(input, withAuthHeader(init, header)))
 }
