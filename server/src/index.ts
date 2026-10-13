@@ -3,6 +3,8 @@ import { fileURLToPath } from 'node:url'
 import fastifyStatic from '@fastify/static'
 import Fastify from 'fastify'
 import { config } from './config.js'
+import { DavAuthError } from './dav/auth.js'
+import { evictClient } from './dav/client.js'
 import { DisallowedHostError } from './dav/hostAllowlist.js'
 import { redactLogUrl } from './logRedaction.js'
 import { registerSession } from './session.js'
@@ -43,6 +45,17 @@ async function main(): Promise<void> {
   // CalDAV server is a rejected SSRF attempt, not a server bug -- surface it
   // as 403, not the default 500 an uncaught throw would otherwise produce.
   app.setErrorHandler((err, req, reply) => {
+    if (err instanceof DavAuthError) {
+      // The stored CalDAV credentials stopped working mid-session. End the
+      // app session too (otherwise a reload's whoami would still pass and
+      // land back here), and answer 401 so the client's session-expired
+      // handling sends the user to /login.
+      const dav = req.session?.get('dav')
+      if (dav) evictClient(dav)
+      req.session?.delete()
+      reply.code(401).send({ error: 'dav_auth_failed', message: err.message })
+      return
+    }
     if (err instanceof DisallowedHostError) {
       reply.code(403).send({ error: 'host_not_allowed', message: err.message })
       return

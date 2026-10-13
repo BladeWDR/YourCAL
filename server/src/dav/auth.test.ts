@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { buildDigestHeader, davFetch, detectAuthMethod, parseDigestChallenge } from './auth.js'
+import { buildDigestHeader, DavAuthError, davFetch, detectAuthMethod, parseDigestChallenge } from './auth.js'
 import type { DavContext } from './context.js'
 
 beforeEach(() => {
@@ -160,5 +160,57 @@ describe('davFetch', () => {
     expect(authA).toContain('nc=00000001')
     expect(authB).toContain('nonce="N2"')
     expect(authB).toContain('nc=00000001')
+  })
+
+  it('throws DavAuthError when a Basic request is rejected', async () => {
+    const ctx: DavContext = { baseUrl: 'https://b2.example.com/', username: 'alice', password: 'old' }
+    vi.mocked(fetch).mockResolvedValueOnce(new Response('', { status: 401 }))
+
+    await expect(davFetch(ctx, 'https://b2.example.com/dav/', { method: 'PROPFIND' })).rejects.toBeInstanceOf(
+      DavAuthError,
+    )
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('throws DavAuthError when the authenticated Digest retry is still rejected', async () => {
+    const ctx: DavContext = {
+      baseUrl: 'https://d3.example.com/',
+      username: 'alice',
+      password: 'old',
+      authMethod: 'Digest',
+    }
+    const challenge = (): Response =>
+      new Response('', { status: 401, headers: { 'www-authenticate': 'Digest realm="R", nonce="N", qop="auth"' } })
+    vi.mocked(fetch).mockResolvedValueOnce(challenge()).mockResolvedValueOnce(challenge())
+
+    await expect(davFetch(ctx, 'https://d3.example.com/dav/', { method: 'PROPFIND' })).rejects.toBeInstanceOf(
+      DavAuthError,
+    )
+    // One probe, one authenticated attempt -- no further retries.
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('throws DavAuthError when a Digest session gets a 401 with no Digest challenge', async () => {
+    const ctx: DavContext = {
+      baseUrl: 'https://d4.example.com/',
+      username: 'alice',
+      password: 'secret',
+      authMethod: 'Digest',
+    }
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response('', { status: 401, headers: { 'www-authenticate': 'Basic realm="R"' } }),
+    )
+
+    await expect(
+      davFetch(ctx, 'https://d4.example.com/dav/', { method: 'REPORT', body: '<report/>' }),
+    ).rejects.toBeInstanceOf(DavAuthError)
+  })
+
+  it('passes non-401 failures through as responses', async () => {
+    const ctx: DavContext = { baseUrl: 'https://b3.example.com/', username: 'alice', password: 'secret' }
+    vi.mocked(fetch).mockResolvedValueOnce(new Response('', { status: 403 }))
+
+    const res = await davFetch(ctx, 'https://b3.example.com/dav/', { method: 'PROPFIND' })
+    expect(res.status).toBe(403)
   })
 })

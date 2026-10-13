@@ -26,12 +26,6 @@ server's own RRULE/ETag validation, which is still only checked by hand.
   (list/update/revoke, as opposed to creating a share) is implemented but
   never spike-tested. Baikal now runs locally (see "Dev CalDAV servers"),
   so both are testable -- just not done yet.
-- **Mid-session credential failure returns 500** — if the CalDAV password
-  changes (or the server starts rejecting the stored credentials) while an
-  app session is live, DAV routes surface the upstream 401 as a **500**,
-  so the client's `SESSION_EXPIRED_EVENT` (401-only) never fires and the
-  user sees an error instead of being sent to `/login`. Seen on both
-  tsdav 2.3.5 and 2.4.0 against Digest Baikal.
 - **Frontend** has only been clicked through piecemeal in a real browser;
   no systematic pass over every dialog / drag / resize path.
 - **Docker** image is unbuilt/unrun (no Docker on this host) — see below.
@@ -261,16 +255,31 @@ nonces turned into unrecoverable 401 loops. So every Digest request costs
 an extra round trip. It's wired in as tsdav's `fetch` override and used
 directly by the raw sharing/PROPPATCH fetches.
 
-**tsdav ≥ 2.4.0 has real Digest support** (dependabot #60), and it wraps
-the `fetch` override in its own Digest layer even with
-`authMethod: 'Basic'` (inactive until a 401 offers Digest without Basic;
-opt out by excluding/pre-setting the `Authorization` header). Measured
-against Digest-only Baikal: normal traffic is unchanged, but when the
-credentials are rejected tsdav retries on top of `davFetch`, so a
-wrong-password login makes 5 rejected requests instead of 3, and a
-mid-session password change 4 per request instead of 2. Replacing
-`davFetch` with tsdav's native Digest is under discussion; until then the
-two layers coexist. Digest was added for
+**tsdav ≥ 2.4.0 has real Digest support** (dependabot #60), and with
+`authMethod: 'Basic'` or `'Digest'` it wraps the `fetch` override in its
+own Digest layer -- which, against Digest-only Baikal, retried rejected
+credentials on top of `davFetch` (wrong-password login: 5 rejected
+requests instead of 3; mid-session password change: 4 per request instead
+of 2). So `createClient` uses `authMethod: 'Custom'` with an
+`authFunction` returning no headers: tsdav neither wraps the fetch nor
+pre-attaches a header, and `davFetch` is the only auth layer. Works on
+tsdav 2.3.5 and 2.4.0. (Letting tsdav do Digest itself for its own
+requests -- it caches the challenge, saving `davFetch`'s extra round trip
+-- is being evaluated separately; the raw sharing/PROPPATCH calls would
+still need `davFetch`, since tsdav doesn't export its Digest fetch.)
+
+**Rejected credentials mid-session** (password changed, account
+disabled): `davFetch` throws `DavAuthError` when an authenticated request
+still gets a 401 (or a Digest session gets a 401 with no Digest
+challenge). `createClient` rethrows it from `login()` too -- tsdav's
+discovery swallows fetch errors and would otherwise surface a generic
+"cannot find principalUrl". The app error handler (`index.ts`) maps it to
+a **401** `dav_auth_failed`, evicts the cached client and deletes the app
+session, so the client's `SESSION_EXPIRED_EVENT` fires and a reload
+doesn't land back on a dead session. (Previously this was a 500.) Verified
+against Digest Baikal (including parallel and stale-cookie requests) and
+Basic Radicale; `DavAuthError` cases are unit-tested in `auth.test.ts`. The
+error handler itself has no unit test -- `index.ts` builds the app inline. Digest was added for
 sabre/dav/Baikal deployments that don't offer Basic. Verified end-to-end
 against real Baikal 0.11.1 with `dav_auth_type: Digest` (login, calendar
 discovery, event create/fetch/delete, raw PROPFIND privilege-set, raw
