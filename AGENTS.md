@@ -21,10 +21,17 @@ server's own RRULE/ETag validation, which is still only checked by hand.
   is discovered and plumbed through the store layer but has no UI and should
   stay that way. Attendees/attachments are also out of scope.
 - **Baikal coverage** — real Baikal 0.11.1 has only been exercised for
-  sharing and plain event CRUD. RRULE/EXDATE/timezone edge cases are
-  Radicale-only-verified. Baikal share **management** (list/update/revoke,
-  as opposed to creating a share) is implemented but never spike-tested (no
-  PHP on this host).
+  sharing, plain event CRUD and Digest auth. RRULE/EXDATE/timezone edge
+  cases are Radicale-only-verified. Baikal share **management**
+  (list/update/revoke, as opposed to creating a share) is implemented but
+  never spike-tested. Baikal now runs locally (see "Dev CalDAV servers"),
+  so both are testable -- just not done yet.
+- **Mid-session credential failure returns 500** — if the CalDAV password
+  changes (or the server starts rejecting the stored credentials) while an
+  app session is live, DAV routes surface the upstream 401 as a **500**,
+  so the client's `SESSION_EXPIRED_EVENT` (401-only) never fires and the
+  user sees an error instead of being sent to `/login`. Seen on both
+  tsdav 2.3.5 and 2.4.0 against Digest Baikal.
 - **Frontend** has only been clicked through piecemeal in a real browser;
   no systematic pass over every dialog / drag / resize path.
 - **Docker** image is unbuilt/unrun (no Docker on this host) — see below.
@@ -131,8 +138,23 @@ and `[sharing]` first.
 
 ### Baikal (0.11.1)
 
-Needs PHP with `mbstring`, `xml`/`dom`/`simplexml`, `pdo_sqlite` — not on
-this host, no `sudo`, so a **human** must set this up.
+Needs PHP with `mbstring`, `xml`/`dom`/`simplexml`, `pdo_sqlite`. This
+host now has PHP 8.3 with all of them, and Baikal is already installed and
+configured under `.dev-baikal/baikal/` -- just start it (it isn't left
+running):
+
+```
+php -S 127.0.0.1:8080 -t .dev-baikal/baikal/html
+```
+
+The default `dav_auth_type` is `Basic`; see "Auth scheme" under Sessions
+for flipping it to `Digest`. The `php -S` access log prints one
+`[status]: METHOD /path` line per request, which is the easiest way to
+count round trips / 401s. Both users have a stored Digest hash
+(`users.digesta1` in the sqlite db), so Digest works without re-creating
+them. No `sqlite3` CLI on this host -- use Python's `sqlite3` module.
+
+Original install (only needed from scratch):
 
 ```
 curl -sL -o .dev-baikal/baikal.zip \
@@ -232,10 +254,23 @@ browser-session cookie regardless of the payload TTL.
 session (`DavContext.authMethod`, absent ⇒ Basic). All CalDAV traffic goes
 through `dav/auth.ts` `davFetch`: Basic just attaches the header; Digest
 (RFC 2617/7616, MD5/`-sess`/SHA-256, `qop=auth`) does the 401
-challenge/response, caches the challenge per host, bumps `nc`, and
-re-negotiates on a stale nonce. It's wired in as tsdav's `fetch` override
-(tsdav's own `authMethod:'Digest'` is a static-string stub) and used
-directly by the raw sharing/PROPPATCH fetches. Digest was added for
+challenge/response, negotiating a **fresh challenge on every request**
+(a probe for body-optional methods, else the real request unauthenticated
+first) -- a per-host challenge cache was tried and dropped because stale
+nonces turned into unrecoverable 401 loops. So every Digest request costs
+an extra round trip. It's wired in as tsdav's `fetch` override and used
+directly by the raw sharing/PROPPATCH fetches.
+
+**tsdav ≥ 2.4.0 has real Digest support** (dependabot #60), and it wraps
+the `fetch` override in its own Digest layer even with
+`authMethod: 'Basic'` (inactive until a 401 offers Digest without Basic;
+opt out by excluding/pre-setting the `Authorization` header). Measured
+against Digest-only Baikal: normal traffic is unchanged, but when the
+credentials are rejected tsdav retries on top of `davFetch`, so a
+wrong-password login makes 5 rejected requests instead of 3, and a
+mid-session password change 4 per request instead of 2. Replacing
+`davFetch` with tsdav's native Digest is under discussion; until then the
+two layers coexist. Digest was added for
 sabre/dav/Baikal deployments that don't offer Basic. Verified end-to-end
 against real Baikal 0.11.1 with `dav_auth_type: Digest` (login, calendar
 discovery, event create/fetch/delete, raw PROPFIND privilege-set, raw
