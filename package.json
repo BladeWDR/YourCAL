@@ -12,12 +12,11 @@
     "dev:client": "npm run dev -w client",
     "build": "npm run build -w shared && npm run build -w server && npm run build -w client",
     "test": "npm run test -w server",
-    "lint": "eslint . --ext .ts,.vue"
+    "lint": "npm run build -w shared && oxlint --type-aware"
   },
   "devDependencies": {
-    "typescript": "^7.0.2",
-    "eslint": "^10.11.0",
-    "@typescript-eslint/eslint-plugin": "^8.71.0",
-    "@typescript-eslint/parser": "^8.11.0"
+    "oxlint": "^1.88.0",
+    "oxlint-tsgolint": "^7.0.2004",
+    "typescript": "^7.0.2"
   }
 }

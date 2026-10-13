@@ -149,14 +149,14 @@ function timeLabel(e: PrintEvent): string {
 
     <!-- Month / Year: one CSS-grid calendar per month -->
     <template v-if="mode === 'month' || mode === 'year'">
-      <section v-for="m in monthsToRender" :key="m.toISODate()" class="pv-month">
+      <section v-for="m in monthsToRender" :key="m.toMillis()" class="pv-month">
         <h2 v-if="mode === 'year'" class="pv-month__name">{{ m.toFormat('LLLL') }}</h2>
         <div class="pv-grid">
           <div v-for="name in weekdayNames" :key="name" class="pv-grid__head">{{ name }}</div>
           <template v-for="(week, wi) in monthMatrix(m)" :key="wi">
             <div
               v-for="day in week"
-              :key="day.date.toISODate()"
+              :key="day.date.toMillis()"
               class="pv-cell"
               :class="{ 'pv-cell--out': !day.inMonth, 'pv-cell--today': day.isToday }"
             >
@@ -176,7 +176,7 @@ function timeLabel(e: PrintEvent): string {
 
     <!-- Week / Day: day columns as stacked lists -->
     <div v-else-if="mode === 'week' || mode === 'day'" class="pv-cols" :class="{ 'pv-cols--one': mode === 'day' }">
-      <section v-for="day in mode === 'week' ? weekDays : [singleDay]" :key="day.date.toISODate()" class="pv-col">
+      <section v-for="day in mode === 'week' ? weekDays : [singleDay]" :key="day.date.toMillis()" class="pv-col">
         <h2 class="pv-col__head" :class="{ 'pv-col__head--today': day.isToday }">
           {{ day.date.toFormat('ccc d LLL') }}
         </h2>
@@ -194,7 +194,7 @@ function timeLabel(e: PrintEvent): string {
     <!-- Agenda: flat date-grouped list -->
     <div v-else class="pv-agenda">
       <p v-if="agendaGroups.length === 0" class="pv-agenda__empty">No events in this range</p>
-      <section v-for="group in agendaGroups" :key="group.date.toISODate()" class="pv-agenda__group">
+      <section v-for="group in agendaGroups" :key="group.date.toMillis()" class="pv-agenda__group">
         <h2 class="pv-agenda__date">{{ group.date.toFormat('cccc, LLLL d') }}</h2>
         <ul class="pv-agenda__events">
           <li v-for="e in group.events" :key="e.id" class="pv-ev pv-ev--row">

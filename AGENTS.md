@@ -42,25 +42,40 @@ new-event defaults, dark mode, auto-refresh.
 ## Toolchain pins
 
 **`typescript` is pinned to `^7.0.2`** (dependabot PR #9). Two parts of the
-toolchain don't support TS7 yet:
+toolchain didn't support TS7:
 
-- **`@typescript-eslint`** peer-caps at `typescript <6.1.0`
-  ([issue #10940](https://github.com/typescript-eslint/typescript-eslint/issues/10940),
-  "1-2 major releases" out). Workaround: CI runs `npm ci --legacy-peer-deps`.
-  Treat lint output with suspicion on TS7-only syntax. There's also no
-  `eslint.config.js` in the repo at all, so `npm run lint` currently fails
-  regardless — separate pre-existing gap.
+- **Lint is Oxlint, not ESLint.** typescript-eslint can't even load on TS7
+  (it needs the JS API TS 7.0 doesn't have; support is targeting TS 7.1 --
+  [#10940](https://github.com/typescript-eslint/typescript-eslint/issues/10940),
+  draft PR #12803), and the repo never had a working `eslint.config.js`
+  anyway. `npm run lint` is `oxlint --type-aware`, configured in
+  `.oxlintrc.json` (typescript/unicorn/oxc/vue plugins, `correctness`
+  category as errors). Type-aware rules run through `oxlint-tsgolint`,
+  which is built on typescript-go itself, so it works on TS7 natively.
+  Covers `.ts` and the `<script>` blocks of `.vue` files -- **not** Vue
+  template rules (no `eslint-plugin-vue` equivalent). CI runs it before
+  build. The script builds `shared` first: its types resolve from
+  `shared/dist`, and without them type-aware rules see `error` types and
+  fail. With typescript-eslint gone, `npm ci` no longer needs
+  `--legacy-peer-deps`.
 - **`vue-tsc`** hard-crashes on TS7 (`ERR_PACKAGE_PATH_NOT_EXPORTED` for
-  `./lib/tsc`, removed in TS7 —
-  [vuejs/language-tools#6124](https://github.com/vuejs/language-tools/issues/6124),
-  [#5381](https://github.com/vuejs/language-tools/issues/5381)). Workaround:
-  `client`'s `build` script is just `vite build`; type-checking moved to a
-  separate `npm run typecheck -w client` that **nothing runs automatically**
-  — client type errors are caught by neither `build` nor CI until this is
-  revisited.
+  `./lib/tsc`). Root cause: TS 7.0 ships **no JS API** at all
+  (`require('typescript')` is just version info), and vue-tsc drives the
+  JS compiler. Real support waits on TS 7.1's new API
+  ([vuejs/language-tools#6170](https://github.com/vuejs/language-tools/pull/6170),
+  draft; #6124/#5381 are closed but did *not* fix this). Workaround, per
+  Microsoft's "run 6.0 side by side" guidance: `client`'s `typescript`
+  devDependency is aliased to `npm:typescript@~6.0.3` (nested under
+  `client/node_modules`; the root/server TS7 stays hoisted), and
+  `client/scripts/vue-tsc.cjs` calls `vue-tsc`'s `run()` with an explicit
+  path to that TS6 `tsc` -- a bare `vue-tsc` is hoisted to the root and
+  would resolve TS7 (npm `overrides` can't redirect it: `typescript` is a
+  *peer* of vue-tsc). `client`'s `build` is `typecheck && vite build`
+  again, so CI type-checks the client. Vite itself never uses `tsc`, so
+  TS6 here only affects type-checking.
 
-**Revisit both** when the upstreams ship TS7 support: drop
-`--legacy-peer-deps` and put `vue-tsc -b` back in front of `vite build`.
+**Revisit** when vue-tsc ships TS7 support: drop the alias and the
+wrapper script, and go back to plain `vue-tsc -b`.
 
 **FullCalendar is on v7** (`@fullcalendar/vue3@^7.1.2` + its required
 `temporal-polyfill` peer). v7 folded the plugins into the framework

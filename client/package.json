@@ -4,8 +4,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
-    "typecheck": "vue-tsc -b",
+    "build": "npm run typecheck && vite build",
+    "typecheck": "node scripts/vue-tsc.cjs -b",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -20,7 +20,7 @@
   "devDependencies": {
     "@types/luxon": "^3.7.6",
     "@vitejs/plugin-vue": "^6.0.9",
-    "typescript": "^7.0.2",
+    "typescript": "npm:typescript@~6.0.3",
     "vite": "^8.3.2",
     "vue-tsc": "^3.3.12"
   }
