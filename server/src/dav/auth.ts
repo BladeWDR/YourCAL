@@ -175,6 +175,49 @@ function withoutBody(init: RequestInit | undefined, method: string): RequestInit
   return { method, headers: init?.headers, redirect: 'manual' }
 }
 
+// --- Digest challenge cache ------------------------------------------------
+//
+// One negotiated challenge per credentials + origin, reused with an
+// incrementing nonce count so a Digest request normally costs a single round
+// trip instead of a 401 + retry. Keyed on the password too (hashed), so a
+// challenge negotiated during a failed login can never be reused by the
+// next attempt -- that leftover-nonce case is what turned an earlier
+// per-origin cache into a 401 loop. Loops are also ruled out structurally:
+// a refused cached challenge is dropped and renegotiated exactly once, and
+// a refusal of the renegotiated one is a DavAuthError, never another retry.
+
+interface CachedChallenge {
+  challenge: DigestChallenge
+  nc: number
+  // Fixed for the entry's life: -sess algorithms fold it into HA1, so it
+  // must not change between requests that reuse the same nonce.
+  cnonce: string
+  lastUsed: number
+}
+
+// Same lifetime as the cached DAVClient (dav/client.ts).
+const CHALLENGE_TTL_MS = 10 * 60 * 1000
+const challengeCache = new Map<string, CachedChallenge>()
+
+setInterval(
+  () => {
+    const cutoff = Date.now() - CHALLENGE_TTL_MS
+    for (const [key, entry] of challengeCache) {
+      if (entry.lastUsed <= cutoff) challengeCache.delete(key)
+    }
+  },
+  CHALLENGE_TTL_MS,
+).unref()
+
+function challengeKey(ctx: DavContext, origin: string): string {
+  return createHash('sha256').update(`${origin}\n${ctx.username}\n${ctx.password}`).digest('hex')
+}
+
+/** Test hook: forget every cached Digest challenge. */
+export function clearDigestChallengeCache(): void {
+  challengeCache.clear()
+}
+
 // Methods where a request with no body is well-formed, so the Digest
 // challenge probe can skip sending one. REPORT/PROPPATCH/PUT/POST/... all
 // require a body (sabre 500s on an empty one).
@@ -183,8 +226,9 @@ const BODY_OPTIONAL_METHODS = new Set(['PROPFIND', 'OPTIONS', 'GET', 'HEAD'])
 /**
  * Drop-in replacement for `fetch()` on every authenticated CalDAV request
  * (used directly by the raw sharing/PROPPATCH calls and wired in as tsdav's
- * `fetch` override). Basic just attaches the header; Digest does the 401
- * challenge/response handshake, negotiating a fresh challenge per request.
+ * `fetch` override). Basic just attaches the header; Digest reuses the
+ * cached challenge for this credentials + origin when there is one, and
+ * otherwise does the 401 challenge/response handshake and caches the result.
  */
 export async function davFetch(
   ctx: DavContext,
@@ -199,13 +243,51 @@ export async function davFetch(
   const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase()
   const parsed = new URL(url)
   const uri = parsed.pathname + parsed.search
+  const key = challengeKey(ctx, parsed.origin)
 
-  // Negotiate a fresh challenge for every request. A per-origin challenge
-  // cache seemed like a safe optimization (sabre validates purely by hash),
-  // but in practice a nonce that goes stale between requests -- or one left
-  // over from a previous, failed login attempt in the same process -- turns
-  // into a 401 loop that never recovers. One extra round trip per request
-  // is a fine price for a handshake that always works.
+  const send = (entry: CachedChallenge): Promise<Response> => {
+    const cnonce = (entry.challenge.algorithm ?? '').toUpperCase().endsWith('-SESS')
+      ? entry.cnonce
+      : randomBytes(16).toString('hex')
+    const header = buildDigestHeader(ctx, { method, uri, challenge: entry.challenge, nc: entry.nc, cnonce })
+    return fetch(input, withAuthHeader(init, header))
+  }
+
+  // Authenticate with a freshly negotiated challenge. A 401 here means the
+  // credentials themselves are refused -- no further retry.
+  const authenticate = async (challenge: DigestChallenge): Promise<Response> => {
+    const entry: CachedChallenge = {
+      challenge,
+      nc: 1,
+      cnonce: randomBytes(16).toString('hex'),
+      lastUsed: Date.now(),
+    }
+    const res = await send(entry)
+    if (res.status === 401) {
+      challengeCache.delete(key)
+      return rejectIfUnauthorized(res)
+    }
+    challengeCache.set(key, entry)
+    return res
+  }
+
+  const cached = challengeCache.get(key)
+  if (cached && Date.now() - cached.lastUsed < CHALLENGE_TTL_MS) {
+    // nc is bumped synchronously, so concurrent requests reusing the entry
+    // each get a distinct count.
+    cached.nc += 1
+    cached.lastUsed = Date.now()
+    const res = await send(cached)
+    if (res.status !== 401) return res
+    // The cached nonce was refused (stale, expired, or the server lost its
+    // nonce state). Drop it and renegotiate once from this 401's challenge.
+    challengeCache.delete(key)
+    const fresh = parseDigestChallenge(res.headers.get('www-authenticate') ?? '')
+    if (!fresh) return rejectIfUnauthorized(res)
+    await res.body?.cancel().catch(() => {})
+    return authenticate(fresh)
+  }
+
   let challenge: DigestChallenge | null = null
 
   if (BODY_OPTIONAL_METHODS.has(method)) {
@@ -228,7 +310,5 @@ export async function davFetch(
     await res.body?.cancel().catch(() => {})
   }
 
-  const cnonce = randomBytes(16).toString('hex')
-  const header = buildDigestHeader(ctx, { method, uri, challenge, nc: 1, cnonce })
-  return rejectIfUnauthorized(await fetch(input, withAuthHeader(init, header)))
+  return authenticate(challenge)
 }
