@@ -37,6 +37,11 @@ FROM node:26-bookworm-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 
+# Release tag (e.g. v0.4.0) for tagged builds; unset => the UI shows "dev".
+# Declared in the runtime stage so changing it doesn't bust the build cache.
+ARG APP_VERSION=
+ENV APP_VERSION=$APP_VERSION
+
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/shared/package.json ./shared/package.json

@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { REMINDER_PRESETS } from '../lib/reminders.js'
 import { useCalendarsStore } from '../stores/calendars.js'
+import { useSessionStore } from '../stores/session.js'
 import {
   DEFAULT_EVENT_LENGTHS,
   useSettingsStore,
@@ -16,6 +17,7 @@ import {
 const emit = defineEmits<{ close: [] }>()
 
 const settingsStore = useSettingsStore()
+const session = useSessionStore()
 const calendarsStore = useCalendarsStore()
 
 const weekStartModel = computed<WeekStart>({
@@ -245,6 +247,7 @@ function toggleDefaultVisible(id: string): void {
       </div>
 
       <div class="dialog__actions">
+        <span v-if="session.info?.version" class="dialog__version">Version {{ session.info.version }}</span>
         <button type="button" class="btn btn-primary" @click="emit('close')">Done</button>
       </div>
     </div>
@@ -311,6 +314,12 @@ function toggleDefaultVisible(id: string): void {
   font-size: 0.85rem;
   background: var(--color-surface);
   color: inherit;
+}
+.dialog__version {
+  margin-right: auto;
+  align-self: center;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
 }
 .dialog__actions {
   display: flex;

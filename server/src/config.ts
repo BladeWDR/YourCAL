@@ -33,4 +33,8 @@ export const config = {
   // means the client's <select> won't have a matching option pre-selected
   // (see EventEditDialog.vue), not a startup failure.
   defaultTimezone: process.env.DEFAULT_TIMEZONE || null,
+  // Baked into the Docker image at build time (APP_VERSION build arg, set
+  // to the git tag by CI for release builds). Anything unset/blank means an
+  // unreleased build, shown as "dev".
+  version: process.env.APP_VERSION || 'dev',
 }

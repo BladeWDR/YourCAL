@@ -113,6 +113,9 @@ export interface SessionInfo {
   // Server-configured fallback timezone (DEFAULT_TIMEZONE env var), or null
   // if unset -- the client falls back further to the browser's own zone.
   defaultTimezone: string | null
+  // Running release: the git tag (e.g. "v0.4.0") for a tagged image build,
+  // or "dev" for anything else (untagged main builds, local runs).
+  version: string
 }
 
 export interface LoginRequest {
