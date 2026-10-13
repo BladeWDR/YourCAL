@@ -51,7 +51,6 @@ import { useClipboardStore } from '../stores/clipboard.js'
 
 const listUpcomingView = {
   type: 'list',
-  buttonText: 'Agenda',
   visibleRange: () => {
     const start = new Date()
     start.setHours(0, 0, 0, 0)
@@ -206,8 +205,10 @@ const fullCalendarEvents = computed(() => {
     start: e.allDay ? e.start.slice(0, 10) : e.start,
     end: e.allDay ? e.end.slice(0, 10) : e.end,
     allDay: e.allDay,
-    backgroundColor: e.color ?? calendarColors.value[e.calendarId],
-    borderColor: e.color ?? calendarColors.value[e.calendarId],
+    // FullCalendar v7 replaced backgroundColor/borderColor with a single
+    // `color` (surfaced as --fc-event-color) plus `contrastColor` for text.
+    color: e.color ?? calendarColors.value[e.calendarId],
+    contrastColor: '#fff',
     editable: !isReadOnlyEvent(e),
     extendedProps: { source: e },
   }))
@@ -764,8 +765,10 @@ const calendarOptions = computed<CalendarOptions>(() => ({
     center: 'title',
     right: 'multiMonthYear,dayGridMonth,timeGridWeek,timeGridDay,listUpcoming',
   },
-  buttonText: {
-    multiMonthYear: 'Year',
+  // v7 dropped the top-level/per-view `buttonText`; labels live in `buttons`.
+  buttons: {
+    multiMonthYear: { text: 'Year' },
+    listUpcoming: { text: 'Agenda' },
   },
   // The agenda view has nothing to show for an empty range -- spell that
   // out rather than leaving a bare gap.
