@@ -88,6 +88,13 @@ The app listens on `http://localhost:3000`. Log in with credentials for
 any CalDAV server reachable from the container (set `ALLOWED_CALDAV_HOSTS`
 to restrict which hosts it's allowed to connect to).
 
+> **Security note:** with `ALLOWED_CALDAV_HOSTS` unset, anyone who can reach
+> the login page can make the server send requests to any host it can reach
+> (including your internal network). That's fine on a trusted LAN; if the
+> app is exposed to the internet, set the allowlist. Behind a reverse proxy,
+> also set `TRUST_PROXY=true` so the login rate limit (10/min per IP) sees
+> real client IPs. See [SECURITY.md](./SECURITY.md).
+
 **Logged out immediately after a successful login?** The session cookie is
 marked `Secure` whenever `NODE_ENV=production` (the Dockerfile's default),
 so browsers silently drop it if you're accessing the app over plain HTTP at

@@ -431,8 +431,9 @@ or a VTIMEZONE authored by a different server.
   http(s)/webcal URL server-side, parses like import, returns
   `CalendarObject[]` with a synthetic `sub:<sha256(url)[:16]>` id and a
   constant `'subscription'` etag (read-only by construction). **SSRF
-  surface, accepted**: gated by `requireSession` only, same trust level as
-  the CalDAV login — would need an allowlist before wider exposure.
+  surface**: gated by `requireSession`; `safeFetchExternal` pins the
+  connection to the validated IP (see "Security hardening"), so DNS
+  rebinding can't swap in a private address.
   Subscriptions are **entirely client-side state**
   (`stores/subscriptions.ts`, localStorage); the server just proxies each
   URL per request. `SubscriptionList.vue` in the sidebar; events merge
@@ -830,3 +831,35 @@ env var, baked in by the Dockerfile `APP_VERSION` build arg: CI passes the
 git tag (`v0.4.0`) for tag builds and `dev` for `main`/dispatch builds.
 Unset (local `npm run dev`) also means `dev`. There's no `.git` in the
 image (`.dockerignore`), so it can't be derived from `git describe` there.
+
+## Security hardening
+
+From an external review of the code:
+
+- **Login host policy is deliberately open.** With `ALLOWED_CALDAV_HOSTS`
+  unset, `POST /api/session` will connect to any `serverUrl` (blind SSRF:
+  it only ever answers 401/403/201). Not changed on purpose -- this is a
+  generic CalDAV frontend and LAN servers are the main use case, so the
+  login path can't use the private-IP-blocking `safeFetchExternal`. The
+  mitigation is the allowlist (documented in the README / SECURITY.md).
+- **DNS rebinding**: `safeFetchExternal` (`dav/ssrf.ts`) uses `node:http(s)`
+  with `guardedLookup` as the socket `lookup`, so the validated addresses
+  are the ones connected to; hostname is untouched (SNI/Host fine). Literal
+  IPs skip DNS and are checked up front. No `Accept-Encoding` is sent, so
+  feeds arrive uncompressed.
+- **Timeouts**: `OUTBOUND_TIMEOUT_MS` (default 30s) bounds every outbound
+  request -- `safeFetchExternal` (whole exchange incl. body), `davFetch`
+  and `detectAuthMethod` via `dav/timeout.ts`.
+- **Login throttling**: `@fastify/rate-limit` on `POST /api/session`
+  (`LOGIN_RATE_LIMIT_MAX`/min per IP; needs `TRUST_PROXY=true` behind a
+  proxy or every user shares one bucket) plus a 20-concurrent-login cap.
+  No per-(server, username) throttle.
+- **Subscriptions**: 60s result cache keyed by url+start+end (shared by
+  in-flight requests, failures not cached, 100 entries), 4 concurrent
+  uncached fetches per account (429), range capped at 800 days.
+- **Origin check** (`originCheck.ts`) on non-GET requests; missing Origin is
+  allowed. The global error handler returns a generic 500 for anything that
+  isn't a Fastify 4xx.
+- **Known/accepted**: the CalDAV password lives in the encrypted session
+  cookie and the in-memory DAV client cache -- inherent to proxying CalDAV
+  auth with no local user store.

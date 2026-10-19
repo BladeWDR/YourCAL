@@ -10,7 +10,7 @@ vi.mock('../ical/subscription.js', () => ({
   fetchSubscriptionEvents: (...args: unknown[]) => fetchSubscriptionEvents(...args),
 }))
 
-const { subscriptionRoutes } = await import('./subscriptions.js')
+const { subscriptionRoutes, clearSubscriptionCache } = await import('./subscriptions.js')
 
 const dav: DavContext = { baseUrl: 'https://caldav.example.com/dav/', username: 'alice', password: 'secret' }
 
@@ -29,6 +29,7 @@ const validQuery = 'url=https%3A%2F%2Fexample.com%2Ffeed.ics&start=2026-01-01T00
 
 beforeEach(() => {
   vi.clearAllMocks()
+  clearSubscriptionCache()
 })
 
 describe('GET /api/subscriptions/events', () => {
@@ -92,5 +93,48 @@ describe('GET /api/subscriptions/events', () => {
     const app = await buildApp()
     const res = await app.inject({ method: 'GET', url: `/api/subscriptions/events?${validQuery}` })
     expect(res.statusCode).toBe(502)
+  })
+
+  it('serves a repeated identical request from cache', async () => {
+    fetchSubscriptionEvents.mockResolvedValue([])
+    const app = await buildApp()
+    await app.inject({ method: 'GET', url: `/api/subscriptions/events?${validQuery}` })
+    await app.inject({ method: 'GET', url: `/api/subscriptions/events?${validQuery}` })
+    expect(fetchSubscriptionEvents).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not cache failures', async () => {
+    fetchSubscriptionEvents.mockRejectedValueOnce(new Error('down')).mockResolvedValueOnce([])
+    const app = await buildApp()
+    expect((await app.inject({ method: 'GET', url: `/api/subscriptions/events?${validQuery}` })).statusCode).toBe(502)
+    expect((await app.inject({ method: 'GET', url: `/api/subscriptions/events?${validQuery}` })).statusCode).toBe(200)
+  })
+
+  it('400s when the range is reversed or too large', async () => {
+    const app = await buildApp()
+    const base = 'url=https%3A%2F%2Fexample.com%2Ffeed.ics'
+    const tooBig = await app.inject({
+      method: 'GET',
+      url: `/api/subscriptions/events?${base}&start=2020-01-01T00:00:00.000Z&end=2030-01-01T00:00:00.000Z`,
+    })
+    const reversed = await app.inject({
+      method: 'GET',
+      url: `/api/subscriptions/events?${base}&start=2026-02-01T00:00:00.000Z&end=2026-01-01T00:00:00.000Z`,
+    })
+    expect(tooBig.statusCode).toBe(400)
+    expect(reversed.statusCode).toBe(400)
+    expect(fetchSubscriptionEvents).not.toHaveBeenCalled()
+  })
+
+  it('429s when one account has too many uncached fetches in flight', async () => {
+    fetchSubscriptionEvents.mockReturnValue(new Promise(() => {}))
+    const app = await buildApp()
+    const base = 'start=2026-01-01T00:00:00.000Z&end=2026-02-01T00:00:00.000Z'
+    for (let i = 0; i < 4; i++) {
+      void app.inject({ method: 'GET', url: `/api/subscriptions/events?url=https%3A%2F%2Fexample.com%2F${i}.ics&${base}` })
+    }
+    await new Promise((r) => setTimeout(r, 50))
+    const res = await app.inject({ method: 'GET', url: `/api/subscriptions/events?url=https%3A%2F%2Fexample.com%2Fx.ics&${base}` })
+    expect(res.statusCode).toBe(429)
   })
 })

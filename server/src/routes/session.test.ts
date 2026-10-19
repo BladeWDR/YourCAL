@@ -148,3 +148,21 @@ describe('DELETE /api/session', () => {
     expect(deletes.count).toBe(1)
   })
 })
+
+describe('POST /api/session rate limiting', () => {
+  it('429s once a client exceeds the per-minute login limit', async () => {
+    detectAuthMethod.mockResolvedValue('Basic')
+    verifyCredentials.mockRejectedValue(new Error('bad creds'))
+    const { app } = await buildApp()
+    const attempt = () =>
+      app.inject({
+        method: 'POST',
+        url: '/api/session',
+        payload: { serverUrl: 'https://caldav.example.com/dav/', username: 'alice', password: 'wrong' },
+      })
+    const codes: number[] = []
+    for (let i = 0; i < 12; i++) codes.push((await attempt()).statusCode)
+    expect(codes.slice(0, 10).every((c) => c === 401)).toBe(true)
+    expect(codes[10]).toBe(429)
+  })
+})

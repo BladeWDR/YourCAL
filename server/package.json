@@ -9,10 +9,11 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@yourcal/shared": "*",
+    "@fastify/rate-limit": "^11.2.1",
     "@fastify/secure-session": "^8.4.1",
     "@fastify/static": "^10.1.6",
     "@touch4it/ical-timezones": "^1.9.0",
+    "@yourcal/shared": "*",
     "better-sqlite3": "^13.0.3",
     "fastify": "^5.12.5",
     "ical.js": "^2.1.0",

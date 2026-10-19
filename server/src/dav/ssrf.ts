@@ -1,5 +1,8 @@
 import { lookup } from 'node:dns/promises'
-import { isIPv4, isIPv6 } from 'node:net'
+import http from 'node:http'
+import https from 'node:https'
+import { isIPv4, isIPv6, type LookupFunction } from 'node:net'
+import { config } from '../config.js'
 
 export class BlockedUrlError extends Error {}
 
@@ -35,82 +38,116 @@ function isPrivateOrReservedIp(ip: string): boolean {
 
 /**
  * Resolves `hostname` and throws if it (or any resolved address) points at
- * a private/internal network. Re-resolving right before each request
- * (rather than trusting a cached result) narrows, though doesn't
- * eliminate, DNS-rebinding: the check and the actual TCP connect still
- * aren't atomic, since `fetch()` re-resolves internally.
+ * a private/internal network. Returns the validated addresses.
  */
-async function assertPublicHostname(hostname: string): Promise<void> {
-  if (isIPv4(hostname) || isIPv6(hostname)) {
-    if (isPrivateOrReservedIp(hostname)) {
-      throw new BlockedUrlError(`Refusing to fetch from private/reserved address "${hostname}"`)
-    }
-    return
-  }
+async function resolvePublicAddresses(hostname: string): Promise<{ address: string; family: number }[]> {
   if (hostname === 'localhost') {
     throw new BlockedUrlError('Refusing to fetch from "localhost"')
   }
-  let addresses: { address: string }[]
+  let addresses: { address: string; family: number }[]
   try {
     addresses = await lookup(hostname, { all: true, verbatim: true })
   } catch {
     throw new BlockedUrlError(`Could not resolve host "${hostname}"`)
   }
+  if (addresses.length === 0) throw new BlockedUrlError(`Could not resolve host "${hostname}"`)
   for (const { address } of addresses) {
     if (isPrivateOrReservedIp(address)) {
       throw new BlockedUrlError(`Refusing to fetch from "${hostname}" (resolves to private address ${address})`)
     }
   }
+  return addresses
+}
+
+/**
+ * Used as the socket's `lookup`, so the addresses validated here are the
+ * very ones the TCP connection is made to -- there is no second resolution
+ * for a rebinding DNS server to answer differently. The hostname itself is
+ * left untouched, so TLS SNI/certificate checks and the Host header still
+ * use it.
+ */
+export const guardedLookup: LookupFunction = (hostname, options, callback) => {
+  resolvePublicAddresses(hostname).then(
+    (addresses) => {
+      if (options.all) {
+        callback(null, addresses)
+      } else {
+        callback(null, addresses[0].address, addresses[0].family)
+      }
+    },
+    (err) => callback(err, '', 0),
+  )
+}
+
+function assertPublicLiteral(hostname: string): void {
+  if (isPrivateOrReservedIp(hostname)) {
+    throw new BlockedUrlError(`Refusing to fetch from private/reserved address "${hostname}"`)
+  }
+}
+
+function requestOnce(url: URL, headers: Record<string, string>, signal: AbortSignal): Promise<http.IncomingMessage> {
+  const transport = url.protocol === 'https:' ? https : http
+  return new Promise((resolve, reject) => {
+    const req = transport.request(url, { method: 'GET', headers, lookup: guardedLookup, signal }, resolve)
+    req.on('error', reject)
+    req.end()
+  })
 }
 
 /**
  * SSRF-hardened fetch for arbitrary user-supplied URLs (subscription
- * feeds): validates the target isn't a private/internal address before
- * every hop, follows redirects manually (re-validating each destination
- * rather than trusting `fetch`'s built-in follow, which doesn't re-check
- * this), and caps the response body size.
+ * feeds): refuses private/internal targets (the connection is pinned to
+ * the validated address, see `guardedLookup`), follows redirects manually
+ * so every hop is re-validated, caps the response body size, and bounds
+ * the whole exchange -- connect, headers and body -- by the outbound
+ * timeout.
  */
-export async function safeFetchExternal(url: string, init?: RequestInit): Promise<{ text: string }> {
+export async function safeFetchExternal(
+  url: string,
+  init?: { headers?: Record<string, string> },
+): Promise<{ text: string }> {
+  const signal = AbortSignal.timeout(config.outboundTimeoutMs)
   let current = url
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     const parsed = new URL(current)
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
       throw new BlockedUrlError(`Unsupported protocol "${parsed.protocol}"`)
     }
-    await assertPublicHostname(parsed.hostname)
+    // Literal IPs skip DNS entirely (so never reach guardedLookup).
+    const literal = parsed.hostname.replace(/^\[|\]$/g, '')
+    if (isIPv4(literal) || isIPv6(literal)) assertPublicLiteral(literal)
 
-    const response = await fetch(current, { ...init, redirect: 'manual' })
+    const response = await requestOnce(parsed, init?.headers ?? {}, signal)
+    const status = response.statusCode ?? 0
 
-    if (response.status >= 300 && response.status < 400) {
-      const location = response.headers.get('location')
+    if (status >= 300 && status < 400) {
+      response.resume()
+      const location = response.headers.location
       if (!location) throw new BlockedUrlError('Redirect response had no Location header')
       current = new URL(location, current).toString()
       continue
     }
 
-    if (!response.ok) {
-      throw new Error(`Request failed: ${response.status} ${response.statusText}`)
+    if (status < 200 || status >= 300) {
+      response.resume()
+      throw new Error(`Request failed: ${status} ${response.statusMessage ?? ''}`.trim())
     }
 
-    const contentLength = response.headers.get('content-length')
+    const contentLength = response.headers['content-length']
     if (contentLength && Number(contentLength) > MAX_RESPONSE_BYTES) {
+      response.destroy()
       throw new BlockedUrlError('Response exceeds maximum allowed size')
     }
 
-    const reader = response.body?.getReader()
-    if (!reader) return { text: await response.text() }
-
-    const chunks: Uint8Array[] = []
+    const chunks: Buffer[] = []
     let total = 0
-    for (;;) {
-      const { done, value } = await reader.read()
-      if (done) break
-      total += value.byteLength
+    for await (const chunk of response as AsyncIterable<Buffer>) {
+      total += chunk.byteLength
       if (total > MAX_RESPONSE_BYTES) {
-        await reader.cancel()
+        response.destroy()
         throw new BlockedUrlError('Response exceeds maximum allowed size')
       }
-      chunks.push(value)
+      chunks.push(chunk)
     }
     return { text: Buffer.concat(chunks).toString('utf-8') }
   }

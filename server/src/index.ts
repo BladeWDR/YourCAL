@@ -6,6 +6,7 @@ import { config } from './config.js'
 import { DavAuthError } from './dav/auth.js'
 import { evictClient } from './dav/client.js'
 import { DisallowedHostError } from './dav/hostAllowlist.js'
+import { originCheck } from './originCheck.js'
 import { redactLogUrl } from './logRedaction.js'
 import { registerSession } from './session.js'
 import { sessionRoutes } from './routes/session.js'
@@ -39,6 +40,7 @@ async function main(): Promise<void> {
       },
     },
     routerOptions: { maxParamLength: 500 },
+    trustProxy: config.trustProxy,
   })
 
   // A calendarId/href resolving to a different host than the authenticated
@@ -66,8 +68,19 @@ async function main(): Promise<void> {
         .send({ error: 'payload_too_large', message: 'File is too large to import' })
       return
     }
-    reply.send(err)
+    // Anything else is unexpected: log it, but don't hand internals (stack
+    // frames, library messages) to the client. 4xx errors Fastify raises
+    // itself (bad JSON, validation, rate limit) are safe to pass through.
+    const status = (err as { statusCode?: number }).statusCode
+    if (status && status >= 400 && status < 500) {
+      reply.send(err)
+      return
+    }
+    req.log.error({ err }, 'Unhandled error')
+    reply.code(500).send({ error: 'internal_error', message: 'Internal server error' })
   })
+
+  app.addHook('onRequest', originCheck)
 
   await registerSession(app)
   await app.register(sessionRoutes, { prefix: '/api/session' })
