@@ -22,6 +22,16 @@ export const config = {
   allowedCalDavHosts: process.env.ALLOWED_CALDAV_HOSTS
     ? process.env.ALLOWED_CALDAV_HOSTS.split(',').map((h) => h.trim())
     : null,
+  // Upper bound, in ms, on any single outbound request (CalDAV or
+  // subscription feed) -- without it a server that accepts the connection
+  // and then stalls would hold the request open forever.
+  outboundTimeoutMs: Number(process.env.OUTBOUND_TIMEOUT_MS ?? 30000),
+  // Set when running behind a reverse proxy so the client IP (used for login
+  // rate limiting) comes from X-Forwarded-For rather than the proxy's own
+  // address. Leave false when exposed directly: the header is spoofable.
+  trustProxy: process.env.TRUST_PROXY === 'true',
+  // Max POST /api/session attempts per client IP per minute.
+  loginRateLimitMax: Number(process.env.LOGIN_RATE_LIMIT_MAX ?? 10),
   cacheEnabled: process.env.CACHE_ENABLED === 'true',
   sqlitePath: process.env.SQLITE_PATH ?? './data/cache.db',
   cacheSyncTtlMs: Number(process.env.CACHE_SYNC_TTL_MS ?? 30000),

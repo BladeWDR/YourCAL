@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto'
 import type { DavContext } from './context.js'
+import { withTimeout } from './timeout.js'
 
 export type AuthMethod = 'Basic' | 'Digest'
 
@@ -115,12 +116,12 @@ export function buildDigestHeader(
  */
 export async function detectAuthMethod(baseUrl: string): Promise<AuthMethod> {
   async function probe(url: string): Promise<{ status: number; wa: string; location: string | null }> {
-    const res = await fetch(url, {
+    const res = await fetch(url, withTimeout({
       method: 'PROPFIND',
       redirect: 'manual',
       headers: { 'Content-Type': 'application/xml', Depth: '0' },
       body: '<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/></d:prop></d:propfind>',
-    })
+    }))
     await res.body?.cancel().catch(() => {})
     return {
       status: res.status,
@@ -172,7 +173,7 @@ function withAuthHeader(init: RequestInit | undefined, authorization: string): R
 // sending the real body on a request we expect to be 401'd. Only used for
 // methods where the body is optional (see davFetch).
 function withoutBody(init: RequestInit | undefined, method: string): RequestInit {
-  return { method, headers: init?.headers, redirect: 'manual' }
+  return { method, headers: init?.headers, redirect: 'manual', signal: init?.signal }
 }
 
 // --- Digest challenge cache ------------------------------------------------
@@ -233,8 +234,9 @@ const BODY_OPTIONAL_METHODS = new Set(['PROPFIND', 'OPTIONS', 'GET', 'HEAD'])
 export async function davFetch(
   ctx: DavContext,
   input: string | URL | Request,
-  init?: RequestInit,
+  requestInit?: RequestInit,
 ): Promise<Response> {
+  const init = withTimeout(requestInit)
   if (ctx.authMethod !== 'Digest') {
     return rejectIfUnauthorized(await fetch(input, withAuthHeader(init, basicAuthHeader(ctx).Authorization)))
   }

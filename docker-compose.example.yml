@@ -14,6 +14,13 @@ services:
       # (the default) allows any host, which is fine for a trusted personal
       # instance but worth locking down if this is reachable more broadly.
       ALLOWED_CALDAV_HOSTS: ${ALLOWED_CALDAV_HOSTS:-}
+      # Set to true behind a reverse proxy so login rate limiting uses the
+      # real client IP; leave false when exposed directly.
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+      # Login attempts per client IP per minute, and the timeout (ms) on any
+      # single outbound request.
+      LOGIN_RATE_LIMIT_MAX: ${LOGIN_RATE_LIMIT_MAX:-10}
+      OUTBOUND_TIMEOUT_MS: ${OUTBOUND_TIMEOUT_MS:-30000}
       # How long a login lasts, in seconds (default 86400 = 24h) -- sets
       # both the cookie's Max-Age and @fastify/secure-session's own
       # server-side expiry check (server/src/session.ts), kept in sync so
