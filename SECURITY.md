@@ -15,6 +15,6 @@ and the version (shown in Settings) if you can.
 - Run behind a TLS-terminating reverse proxy and set `TRUST_PROXY=true` so
   login rate limiting sees real client IPs.
 - Keep `SESSION_SECRET` secret; it encrypts the session cookie, which holds
-  the user's CalDAV credentials.
+  the user's DAV credentials.
 - Subscription feeds are fetched server-side with private/loopback/link-local
   addresses blocked, redirects re-validated, and size/time limits applied.

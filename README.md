@@ -1,9 +1,15 @@
 # YourDAV
 
-A self-hosted web calendar client for CalDAV servers (tested against
-[Radicale](https://radicale.org/) and [Baikal](https://sabre.io/baikal/)).
-Your CalDAV server is the sole identity provider — there's no separate
-local user store or account system.
+A self-hosted web calendar and contacts client for CalDAV/CardDAV servers
+(tested against [Radicale](https://radicale.org/) and
+[Baikal](https://sabre.io/baikal/)). Your DAV server is the sole identity
+provider — there's no separate local user store or account system. Switch
+between Calendar and Contacts from the top of the sidebar; if your server
+has no address books, the Contacts tab is hidden.
+
+YourDAV is the merger of the former YourCal and YourContacts projects. See
+[Upgrading from YourCal](#upgrading-from-yourcal) if you're coming from an
+earlier release.
 
 ## Features
 
@@ -18,6 +24,12 @@ local user store or account system.
 - WebCal/ICS URL subscriptions (read-only)
 - Calendar sharing between users on the same CalDAV server (Radicale
   sharing API and Baikal `cs:share`, with an in-app accept flow)
+- Contacts (CardDAV): multiple address books (create and delete), groups,
+  photos, typed phones/emails/websites/addresses, `.vcf` import and export,
+  read-only address books. Edits only touch the fields the editor manages —
+  everything else on the card (custom `X-` properties, instant-message
+  handles, etc.) is preserved byte-for-byte. Contacts have so far only been
+  verified against Radicale.
 
 See [AGENTS.md](./AGENTS.md) for implementation details, known gaps, and
 open items.
@@ -48,7 +60,7 @@ open items.
 npm workspaces monorepo:
 
 - `shared` — TypeScript types shared between client and server
-- `server` — Fastify API, talks to your CalDAV server via `tsdav`
+- `server` — Fastify API, talks to your CalDAV/CardDAV server via `tsdav`
 - `client` — Vue 3 SPA (FullCalendar for the calendar grid)
 
 ## Running with Docker
@@ -85,7 +97,7 @@ docker compose up -d
 ### Either way
 
 The app listens on `http://localhost:3000`. Log in with credentials for
-any CalDAV server reachable from the container (set `ALLOWED_DAV_HOSTS`
+any CalDAV/CardDAV server reachable from the container (set `ALLOWED_DAV_HOSTS`
 to restrict which hosts it's allowed to connect to).
 
 > **Security note:** with `ALLOWED_DAV_HOSTS` unset, anyone who can reach
@@ -107,7 +119,7 @@ trusted LAN, uncomment `NODE_ENV: development` in `docker-compose.yml` and
 
 ## Running locally for development
 
-Requires Node.js and a running CalDAV server to point at.
+Requires Node.js and a running CalDAV/CardDAV server to point at.
 
 ```sh
 npm install
@@ -128,8 +140,29 @@ npm run lint    # eslint across the workspace
 ## Configuration
 
 All server configuration is via environment variables — see
-[.env.example](./.env.example) for the full list (session secret, CalDAV
+[.env.example](./.env.example) for the full list (session secret, DAV
 host allowlist, session TTL, optional SQLite read-cache).
+
+## Upgrading from YourCal
+
+The first YourDAV release renames the project and is **a breaking change**.
+Nothing is lost server-side — your calendars and contacts live on your DAV
+server — but your deployment needs these edits:
+
+- **Image:** `ghcr.io/fuzzymistborn/yourcal` stops receiving updates. Switch
+  to `ghcr.io/fuzzymistborn/yourdav`.
+- **Compose service and volume:** `yourcal` / `yourcal-data` are now
+  `yourdav` / `yourdav-data`. The volume only holds the optional SQLite
+  read-cache (`CACHE_ENABLED`), which is rebuilt automatically, so you can
+  start with a fresh volume. To keep it anyway:
+  `docker run --rm -v yourcal-data:/from -v yourdav-data:/to alpine cp -a /from/. /to/`.
+- **Environment:** `ALLOWED_CALDAV_HOSTS` is now `ALLOWED_DAV_HOSTS` (it
+  covers CardDAV too). The old name is **not** read, so with only the old
+  name set the allowlist silently turns off — rename it before upgrading.
+- **Coming from YourContacts:** that project's separate image is replaced by
+  this one. Per-account settings (theme, address format) were stored on the
+  server there and are now browser-local like the calendar's; set them once in
+  Settings. `ALLOWED_CARDDAV_HOSTS` is now `ALLOWED_DAV_HOSTS`.
 
 ## Troubleshooting
 

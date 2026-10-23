@@ -1,8 +1,10 @@
 # AGENTS.md
 
 Monorepo: `shared` (types) / `server` (Fastify API) / `client` (Vue 3 SPA),
-npm workspaces. Package/workspace names are `yourdav` / `@yourdav/*`. The
-CalDAV server is the sole identity provider — no local user store.
+npm workspaces. Package/workspace names are `yourdav` / `@yourdav/*`. YourDAV
+is a calendar (CalDAV) and contacts (CardDAV) client in one app, formerly two
+projects (YourCal and YourContacts). The DAV server is the sole identity
+provider — no local user store.
 
 Verification discipline throughout: features are driven against a real
 CalDAV server with curl, not just typechecked. Automated tests
@@ -29,6 +31,12 @@ server's own RRULE/ETag validation, which is still only checked by hand.
 - **Frontend** has only been clicked through piecemeal in a real browser;
   no systematic pass over every dialog / drag / resize path.
 - **Docker** image is unbuilt/unrun (no Docker on this host) — see below.
+- **Contacts UI** has been typechecked, built and driven end-to-end at the
+  API level against Radicale, but never clicked through in a real browser.
+  Baikal CardDAV is untested, and so is a CalDAV-only server (the
+  `hasContacts: false` path is unit-tested only).
+- **Contacts: address-book sharing, duplicate merge, and rename** are out of
+  scope; create/delete exist.
 
 Done, each with a section below: search, ICS import, WebCal/ICS
 subscriptions, recurring-event UI (interval / `BYDAY` picker / end
@@ -38,9 +46,8 @@ delete, read-only calendars, ICS export, calendar sharing (create / accept
 / unsubscribe / owner-side management), SQLite read-cache, calendar sort,
 undo toast, agenda / year / mini-month navigator, duplicate event /
 copy-paste, print view, 12h/24h time format setting, view options /
-new-event defaults, dark mode, auto-refresh, CardDAV contacts support
-(address book discovery/create/delete, vCard 3.0 parsing & serialization,
-contact CRUD, master-detail UI, sidebar app switcher).
+new-event defaults, dark mode, auto-refresh, CardDAV contacts (see "CardDAV
+contacts" below).
 
 ## Toolchain pins
 
@@ -834,71 +841,76 @@ git tag (`v0.4.0`) for tag builds and `dev` for `main`/dispatch builds.
 Unset (local `npm run dev`) also means `dev`. There's no `.git` in the
 image (`.dockerignore`), so it can't be derived from `git describe` there.
 
-## CardDAV contacts support
+## CardDAV contacts
 
-Implemented and verified against real Radicale 3.8.3 (htpasswd auth,
-address book created via `MKCOL`).
+Merged in from the separate YourContacts project. The shell (app switcher,
+`/contacts` route, master-detail layout, address-book sidebar, per-book client
+cache) came from PR #68 by BladeWDR; the data layer is YourContacts' and
+replaced that PR's ical.js-based one. Verified end-to-end with curl against a
+real Radicale (create/list/edit/delete, stale-etag 412, Apple-style cards);
+**not** against Baikal, and the UI is not browser-tested.
 
-- **CardDAV Client Discovery**: `server/src/dav/client.ts` supports
-  `createClient(ctx, 'carddav')` (passing `defaultAccountType: 'carddav'`
-  to `tsdav`'s `DAVClient`). Discovery finds `addressbook-home-set` (stored
-  under `client.account.homeUrl`). The client instance is cached separately
-  from the CalDAV client using a compound cache key (`... \n carddav`),
-  evicted on logout/auth failure via `evictClient(ctx)`.
-- **vCard 3.0 Parser & Serializer**: `server/src/vcard/vcard.ts` uses
-  `ical.js` (`ICAL.parse`, `ICAL.Component`) for bidirectional conversion
-  between RFC 6350 / 2426 vCard format and typed `Contact` / `ContactFields`
-  models.
-  - Supports: Full formatted name (`FN`), structured name (`N`), nickname
-    (`NICKNAME`), organization (`ORG`), title (`TITLE`), role (`ROLE`),
-    multiple typed emails (`EMAIL`), multiple typed phones (`TEL`),
-    multiple typed postal addresses (`ADR`), birthday (`BDAY`), website
-    (`URL`), and notes (`NOTE`).
-  - Updating a contact parses the existing vCard first to preserve unknown
-    properties (such as `PHOTO` or vendor-specific `X-*` attributes).
-  - Unit-tested in `server/src/vcard/vcard.test.ts`.
-- **Address Book Store**: `server/src/store/DavAddressBookStore.ts` provides:
-  - `discoverAddressBooks`: discovers address book collections using
-    `client.fetchAddressBooks()`.
-  - `createAddressBook`: creates address books using raw `MKCOL` with
-    `<C:addressbook/>` resourcetype.
-  - `deleteAddressBook`: deletes collections via DAV `DELETE`.
-  - `getContacts`: fetches vCards via `client.fetchVCards({ useMultiGet: false })`,
-    sorted by `fn.localeCompare` (single REPORT request for ETags + address-data).
-  - `createContact`: generates UUID filename and calls `client.createVCard()`.
-  - `updateContact`: fetches existing vCard to preserve unknown fields,
-    updates via `client.updateVCard()` with `If-Match` ETag header (maps
-    412 to `EtagConflictError`).
-  - `deleteContact`: deletes card via `client.deleteVCard()` with `If-Match`.
-  - SSRF protection: calls `assertHrefSameHost(ctx.baseUrl, url)` on all
-    decoded address book IDs and contact hrefs.
-- **API Routes**: `server/src/routes/contacts.ts` registered under
-  `/api/addressbooks`:
-  - `GET /api/addressbooks` & `POST /api/addressbooks`
-  - `DELETE /api/addressbooks/:id`
-  - `GET /api/addressbooks/:id/contacts` & `POST /api/addressbooks/:id/contacts`
-  - `PUT /api/addressbooks/:id/contacts/:uid` & `DELETE /api/addressbooks/:id/contacts/:uid`
-- **Frontend & Navigation**:
-  - `AppNavSwitcher.vue`: Segmented tab control at the top of the sidebar
-    toggling between Calendar (`/`) and Contacts (`/contacts`).
-  - `ContactsView.vue`: Master-detail view. Matches `CalendarView.vue` layout
-    dimensions (`.sidebar` 256px, padding `1.25rem 1rem`, gap `1.1rem`,
-    transparent background; `.main` padding `1.25rem` containing a surface
-    card with `--radius-lg` and `--color-border`), eliminating visual
-    shift when switching views and matching light/dark theme tokens.
-  - Sidebar contains address book selector, inline address book creation,
-    and user footer with Settings and Sign out.
-  - Middle pane contains real-time search filtering and contact list with
-    avatar badges.
-  - Right pane contains contact details (with clickable `mailto:` and `tel:`
-    links) or an edit/create form supporting dynamic email, phone, and
-    postal address rows.
-  - Performance & caching: `useContactsStore` maintains a 30s freshness
-    window (`FRESH_MS = 30_000`) matching `useEventsStore`, remembering
-    address books and contacts in memory so switching between views is 0ms
-    instant. Remembers active book ID in `localStorage` to fetch books and
-    contacts in parallel (`Promise.all`), with non-blocking SWR background
-    revalidation.
+- **One session, two protocols.** `createClient(ctx, 'caldav' | 'carddav')` in
+  `server/src/dav/client.ts` keeps one cached tsdav client per account *and*
+  account type (the type is part of the cache key — without it the two would
+  collide); `evictClient` clears both. Contacts always use `'carddav'`.
+- **`SessionInfo.hasContacts`** is set at login and on whoami from
+  `supportsContacts()` (`dav/discovery.ts`), a CardDAV discovery probe that
+  never throws and is cached per account for ten minutes. When false the
+  switcher omits the Contacts tab and the router bounces `/contacts`.
+- **API** (`server/src/routes/addressbooks.ts`, mounted at `/api/addressbooks`):
+  `GET /` and `POST /` (create), `DELETE /:id`, `GET|POST|PUT|DELETE
+  /:id/contacts`, `GET /:id/photo`, `GET /:id/export`, `POST /:id/import`,
+  `POST /:id/groups/rename`. Writes check the address book is discovered and
+  not read-only (`writable()`); address-book delete is refused (404) for any id
+  that is not a discovered address book.
+- **Store** (`store/DavContactStore.ts`, no SQLite cache — contacts always go
+  straight to the server): `readOnly` comes from the WebDAV ACL via
+  `isCollectionReadOnly`, shared with calendars. Every card href must sit inside
+  its address book's path (`hrefInBook`, segment-boundary check) and
+  throws `ForbiddenError` (-> 403) otherwise. Updates re-fetch the server's card
+  and send `If-Match`; a stale etag is a 412.
+
+### vCard handling (important)
+
+- `server/src/vcard/` is a hand-written line parser, **not** ical.js. PR #68's
+  ical.js version was tested and rewrote untouched data on every edit:
+  `BDAY;VALUE=date:1990-05-17` became `BDAY;VALUE=DATE:19900517`, `GEO:geo:1,2`
+  became `geo:1\,2` (corrupting the URI), `TYPE=CELL,VOICE` became one quoted
+  `TYPE="CELL, VOICE"`, `PREF=`/`VALUE=` parameters were dropped, and an Apple
+  `item1.X-ABLabel` was orphaned from its `item1.EMAIL`.
+- Edits regenerate only the managed properties (FN, N, NICKNAME, ORG, TITLE,
+  EMAIL, TEL, URL, ADR, BDAY, ANNIVERSARY, NOTE, CATEGORIES, PHOTO); every other
+  line (X-*, PRODID, IMPP, KIND, GEO, ...) is kept byte-for-byte. VERSION is
+  retained (3.0 or 4.0); new cards are 3.0. `REV` is refreshed.
+- ORG is structured (company;department) but edited as one flat string, so the
+  stored ORG line is kept verbatim unless its text changes.
+- Apple-style groups (`item1.EMAIL` + `item1.X-ABLabel`) are removed together
+  when the managed property is regenerated, so a custom label ("Work2") is
+  dropped with it rather than left orphaned. Known loss.
+- The editor's "display name" field only holds a value when the stored FN differs
+  from the one generated from the name parts, so a custom FN ("Mom") survives an
+  edit and clearing the field regenerates it.
+- Birthdays/anniversaries are plain text (`1990-01-31` or `--01-31` with no
+  year) because a date picker would silently clear year-less dates.
+- `Contact.href` / `Contact.id` are opaque locators the client echoes back.
+  Import dedupes by UID; cards with no UID get a content-hash UID so
+  re-importing is idempotent.
+
+### Client
+
+- `stores/contacts.ts` keeps contacts per address book with a 30s freshness
+  window and stale-while-revalidate, remembers the active book in
+  `localStorage` (`yourdav:active-address-book`, cleared on logout), and
+  falls back to the first book if the remembered one no longer exists.
+  Search, group filter and sort are client-side.
+- `views/ContactsView.vue` (editor and detail inline), `components/ContactAvatar.vue`
+  (photo or initials; the parent supplies size/colour via `class`),
+  `lib/labels.ts` (type labels, date formatting, photo downscale).
+- The address format preference (US / international) lives in the existing
+  localStorage-backed `stores/settings.ts` and Settings dialog like every other
+  preference — YourContacts' server-side per-account settings were not carried
+  over.
 
 ## Security hardening
 
