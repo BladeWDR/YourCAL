@@ -7,14 +7,15 @@ import { DavAuthError } from './dav/auth.js'
 import { evictClient } from './dav/client.js'
 import { DisallowedHostError } from './dav/hostAllowlist.js'
 import { originCheck } from './originCheck.js'
+import { ForbiddenError } from './store/errors.js'
 import { redactLogUrl } from './logRedaction.js'
 import { registerSession } from './session.js'
 import { sessionRoutes } from './routes/session.js'
+import { addressBookRoutes } from './routes/addressbooks.js'
 import { calendarRoutes } from './routes/calendars.js'
 import { searchRoutes } from './routes/search.js'
 import { sharingRoutes } from './routes/sharing.js'
 import { subscriptionRoutes } from './routes/subscriptions.js'
-import { contactRoutes } from './routes/contacts.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -59,6 +60,10 @@ async function main(): Promise<void> {
       reply.code(401).send({ error: 'dav_auth_failed', message: err.message })
       return
     }
+    if (err instanceof ForbiddenError) {
+      reply.code(403).send({ error: 'forbidden', message: err.message })
+      return
+    }
     if (err instanceof DisallowedHostError) {
       reply.code(403).send({ error: 'host_not_allowed', message: err.message })
       return
@@ -83,13 +88,22 @@ async function main(): Promise<void> {
 
   app.addHook('onRequest', originCheck)
 
+  // .vcf imports arrive as plain text bodies.
+  app.addContentTypeParser(
+    ['text/vcard', 'text/x-vcard', 'text/plain'],
+    { parseAs: 'string', bodyLimit: 20 * 1024 * 1024 },
+    (_req, body, done) => {
+      done(null, body)
+    },
+  )
+
   await registerSession(app)
   await app.register(sessionRoutes, { prefix: '/api/session' })
   await app.register(calendarRoutes, { prefix: '/api/calendars' })
   await app.register(searchRoutes, { prefix: '/api/search' })
   await app.register(sharingRoutes, { prefix: '/api/sharing' })
   await app.register(subscriptionRoutes, { prefix: '/api/subscriptions' })
-  await app.register(contactRoutes, { prefix: '/api/addressbooks' })
+  await app.register(addressBookRoutes, { prefix: '/api/addressbooks' })
 
   const clientDist = path.join(__dirname, '../../client/dist')
   await app.register(fastifyStatic, { root: clientDist })

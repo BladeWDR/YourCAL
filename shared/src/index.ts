@@ -198,67 +198,113 @@ export interface UnsubscribeResult {
   dismissedPending: { pathOrToken: string; dismissedAt: number } | null
 }
 
+// --- Contacts (CardDAV) ---
+
 export interface AddressBook {
-  id: string // base64url encoded url
+  /** Opaque id; the client echoes it back and never parses it. */
+  id: string
   displayName: string
-  ctag: string | null
+  description: string | null
   readOnly: boolean
-}
-
-export interface ContactEmail {
-  type?: string
-  value: string
-}
-
-export interface ContactPhone {
-  type?: string
-  value: string
-}
-
-export interface ContactPostalAddress {
-  type?: string
-  street?: string
-  locality?: string
-  region?: string
-  postalCode?: string
-  country?: string
-}
-
-export interface ContactFields {
-  fn: string // Full formatted name (required by RFC 6350)
-  givenName?: string
-  familyName?: string
-  additionalName?: string
-  honorificPrefix?: string
-  honorificSuffix?: string
-  nickname?: string
-  organization?: string
-  title?: string
-  role?: string
-  emails: ContactEmail[]
-  phones: ContactPhone[]
-  addresses: ContactPostalAddress[]
-  notes?: string
-  bday?: string // YYYY-MM-DD
-  url?: string
-}
-
-export interface Contact extends ContactFields {
-  uid: string
-  href: string
-  etag: string | null
-  addressBookId: string
-}
-
-export type CreateContactInput = ContactFields
-
-export interface UpdateContactInput {
-  href: string
-  etag: string | null
-  fields: ContactFields
+  ctag: string | null
 }
 
 export interface CreateAddressBookInput {
   displayName: string
 }
 
+export interface LabeledValue {
+  value: string
+  /** Lowercased vCard TYPE tokens, e.g. ['home'], ['work', 'voice'], ['cell']. */
+  types: string[]
+  pref: boolean
+}
+
+export interface PostalAddress {
+  types: string[]
+  poBox: string
+  extended: string
+  street: string
+  locality: string
+  region: string
+  postalCode: string
+  country: string
+}
+
+export interface StructuredName {
+  family: string
+  given: string
+  additional: string
+  prefix: string
+  suffix: string
+}
+
+export interface Contact {
+  /** Opaque id; the client echoes it back and never parses it. */
+  id: string
+  addressBookId: string
+  /** Opaque locator of the .vcf resource; echoed back on write. */
+  href: string
+  etag: string
+  uid: string
+  version: '3.0' | '4.0'
+  fullName: string
+  name: StructuredName
+  nickname: string
+  org: string
+  title: string
+  emails: LabeledValue[]
+  phones: LabeledValue[]
+  urls: LabeledValue[]
+  addresses: PostalAddress[]
+  /** YYYY-MM-DD, or --MM-DD when the year is unknown. Empty when unset. */
+  birthday: string
+  anniversary: string
+  notes: string
+  categories: string[]
+  hasPhoto: boolean
+}
+
+/** Editable subset of a Contact; everything else on the card is preserved server-side. */
+export interface ContactInput {
+  name: StructuredName
+  fullName?: string
+  nickname: string
+  org: string
+  title: string
+  emails: LabeledValue[]
+  phones: LabeledValue[]
+  urls: LabeledValue[]
+  addresses: PostalAddress[]
+  birthday: string
+  anniversary: string
+  notes: string
+  categories: string[]
+  /** data: URI to set the photo, null to remove it, omitted to leave it alone. */
+  photo?: string | null
+}
+
+export interface UpdateContactInput extends ContactInput {
+  href: string
+  etag: string
+}
+
+export interface DeleteContactInput {
+  href: string
+  etag: string
+}
+
+export interface ImportResult {
+  imported: number
+  skipped: number
+}
+
+export interface RenameGroupInput {
+  from: string
+  to: string
+}
+
+export interface RenameGroupResult {
+  updated: number
+  failed: number
+}

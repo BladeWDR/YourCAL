@@ -24,6 +24,9 @@ export type CalendarViewType = 'multiMonthYear' | 'dayGridMonth' | 'timeGridWeek
 // 'auto' follows the OS's prefers-color-scheme (live, via matchMedia).
 export type Theme = 'auto' | 'light' | 'dark'
 
+// 'us': street, city, state, ZIP.  'intl': postal code before the city.
+export type AddressFormat = 'us' | 'intl'
+
 export const DEFAULT_EVENT_LENGTHS = [15, 30, 45, 60, 90, 120] as const
 
 const STORAGE_KEY = 'calendar.weekStart'
@@ -41,6 +44,7 @@ const SHOW_WEEKENDS_STORAGE_KEY = 'calendar.showWeekends'
 const SCROLL_HOUR_STORAGE_KEY = 'calendar.scrollHour'
 const DEFAULT_EVENT_LENGTH_STORAGE_KEY = 'calendar.defaultEventLength'
 const DEFAULT_REMINDER_STORAGE_KEY = 'calendar.defaultReminder'
+const ADDRESS_FORMAT_STORAGE_KEY = 'contacts.addressFormat'
 
 const VALID_VIEWS: CalendarViewType[] = ['multiMonthYear', 'dayGridMonth', 'timeGridWeek', 'timeGridDay', 'listUpcoming']
 
@@ -80,6 +84,10 @@ function loadInitial(): WeekStart {
 
 function loadTimeFormat(): TimeFormat {
   return localStorage.getItem(TIME_FORMAT_STORAGE_KEY) === '24h' ? '24h' : '12h'
+}
+
+function loadAddressFormat(): AddressFormat {
+  return localStorage.getItem(ADDRESS_FORMAT_STORAGE_KEY) === 'intl' ? 'intl' : 'us'
 }
 
 function loadDefaultCalendarMode(): DefaultCalendarMode {
@@ -122,6 +130,7 @@ export const useSettingsStore = defineStore('settings', () => {
     loadInt(DEFAULT_EVENT_LENGTH_STORAGE_KEY, 60, (m) => (DEFAULT_EVENT_LENGTHS as readonly number[]).includes(m)),
   )
   const defaultReminder = ref<number | null>(loadDefaultReminder())
+  const addressFormat = ref<AddressFormat>(loadAddressFormat())
 
   // The resolved theme lands on <html data-theme="light|dark">, which
   // base.css keys its dark token overrides off. Applied here (not in a
@@ -215,6 +224,11 @@ export const useSettingsStore = defineStore('settings', () => {
     else localStorage.setItem(DEFAULT_REMINDER_STORAGE_KEY, String(value))
   }
 
+  function setAddressFormat(value: AddressFormat): void {
+    addressFormat.value = value
+    localStorage.setItem(ADDRESS_FORMAT_STORAGE_KEY, value)
+  }
+
   return {
     weekStart,
     firstDay,
@@ -247,5 +261,7 @@ export const useSettingsStore = defineStore('settings', () => {
     setDefaultEventLength,
     defaultReminder,
     setDefaultReminder,
+    addressFormat,
+    setAddressFormat,
   }
 })

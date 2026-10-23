@@ -1,40 +1,150 @@
 <script setup lang="ts">
-import type { Contact, ContactFields } from '@yourdav/shared'
+import type { Contact, ContactInput, LabeledValue, PostalAddress, StructuredName } from '@yourdav/shared'
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { api, ApiRequestError } from '../api.js'
 import AppNavSwitcher from '../components/AppNavSwitcher.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
+import ContactAvatar from '../components/ContactAvatar.vue'
 import SettingsDialog from '../components/SettingsDialog.vue'
-import { useContactsStore } from '../stores/contacts.js'
+import {
+  ADDRESS_TYPES,
+  EMAIL_TYPES,
+  formatDate,
+  imageToDataUri,
+  PHONE_TYPES,
+  primaryType,
+  typeLabel,
+  typeName,
+  URL_TYPES,
+} from '../lib/labels.js'
+import { UNGROUPED, useContactsStore } from '../stores/contacts.js'
 import { useSessionStore } from '../stores/session.js'
+import { useSettingsStore } from '../stores/settings.js'
 
 const contactsStore = useContactsStore()
 const session = useSessionStore()
+const settings = useSettingsStore()
 
 const showSettingsDialog = ref(false)
 const confirmingDelete = ref<Contact | null>(null)
 const confirmingDeleteBook = ref<string | null>(null)
 const isEditing = ref(false)
 const isCreating = ref(false)
+const saving = ref(false)
+const saveError = ref<string | null>(null)
 const newBookName = ref('')
 const showNewBookForm = ref(false)
 const newBookInput = ref<HTMLInputElement | null>(null)
+const bookError = ref<string | null>(null)
+const renamingGroup = ref<string | null>(null)
+const renameValue = ref('')
+const importInput = ref<HTMLInputElement | null>(null)
+const importMessage = ref<string | null>(null)
 
-// Edit/Create form state
-const form = reactive<ContactFields>({
-  fn: '',
-  givenName: '',
-  familyName: '',
-  nickname: '',
-  organization: '',
-  title: '',
-  role: '',
-  notes: '',
-  bday: '',
-  url: '',
-  emails: [],
-  phones: [],
-  addresses: [],
+const readOnly = computed(() => !!contactsStore.activeBook?.readOnly)
+const editing = computed(() => isCreating.value || isEditing.value)
+
+// --- Edit/create form ---------------------------------------------------
+
+interface FormState {
+  name: StructuredName
+  /** Only set when the stored display name differs from the one generated from the name parts. */
+  fullName: string
+  nickname: string
+  org: string
+  title: string
+  emails: LabeledValue[]
+  phones: LabeledValue[]
+  urls: LabeledValue[]
+  addresses: PostalAddress[]
+  birthday: string
+  anniversary: string
+  notes: string
+  categories: string[]
+}
+
+function clone<T>(v: T): T {
+  return JSON.parse(JSON.stringify(v)) as T
+}
+
+function emptyName(): StructuredName {
+  return { family: '', given: '', additional: '', prefix: '', suffix: '' }
+}
+
+function emptyAddress(): PostalAddress {
+  return { types: ['home'], poBox: '', extended: '', street: '', locality: '', region: '', postalCode: '', country: '' }
+}
+
+function emptyForm(): FormState {
+  return {
+    name: emptyName(),
+    fullName: '',
+    nickname: '',
+    org: '',
+    title: '',
+    emails: [{ value: '', types: ['work'], pref: false }],
+    phones: [{ value: '', types: ['cell'], pref: false }],
+    urls: [],
+    addresses: [],
+    birthday: '',
+    anniversary: '',
+    notes: '',
+    categories: [],
+  }
+}
+
+/** Mirrors the server's rule for the FN it generates when no display name is given. */
+function autoName(n: StructuredName, org: string): string {
+  const assembled = [n.prefix, n.given, n.additional, n.family, n.suffix].filter((x) => x.trim()).join(' ')
+  return assembled || org.trim()
+}
+
+function formFrom(c: Contact): FormState {
+  return {
+    name: { ...emptyName(), ...clone(c.name) },
+    fullName: c.fullName !== autoName(c.name, c.org) ? c.fullName : '',
+    nickname: c.nickname,
+    org: c.org,
+    title: c.title,
+    emails: clone(c.emails),
+    phones: clone(c.phones),
+    urls: clone(c.urls),
+    addresses: clone(c.addresses),
+    birthday: c.birthday,
+    anniversary: c.anniversary,
+    notes: c.notes,
+    categories: [...c.categories],
+  }
+}
+
+const form = reactive<FormState>(emptyForm())
+// undefined = leave the stored photo alone, null = remove it, string = replace it.
+const photo = ref<string | null | undefined>(undefined)
+const photoError = ref<string | null>(null)
+const newCategory = ref('')
+
+const nameMissing = computed(() => !autoName(form.name, form.org) && !form.fullName.trim())
+const dateRe = /^(\d{4}-\d{2}-\d{2}|--\d{2}-\d{2})?$/
+const dateError = computed(() =>
+  dateRe.test(form.birthday.trim()) && dateRe.test(form.anniversary.trim())
+    ? null
+    : 'Dates must look like 1990-01-31, or --01-31 when the year is unknown.',
+)
+const categorySuggestions = computed(() =>
+  contactsStore.groups.map((g) => g.name).filter((g) => !form.categories.includes(g)),
+)
+
+// Preview for the photo picker: the stored photo unless it was removed or replaced.
+const previewContact = computed<Contact>(() => {
+  const base = isEditing.value ? contactsStore.selectedContact : null
+  return {
+    ...(base ?? ({ id: '', addressBookId: '', href: '', etag: '', uid: 'new' } as Contact)),
+    fullName: autoName(form.name, form.org) || form.fullName || '?',
+    hasPhoto: photo.value === undefined && !!base?.hasPhoto,
+  }
 })
+const previewSrc = computed(() => (typeof photo.value === 'string' ? photo.value : null))
+const showRemovePhoto = computed(() => typeof photo.value === 'string' || previewContact.value.hasPhoto)
 
 onMounted(async () => {
   await contactsStore.loadAddressBooks()
@@ -46,128 +156,145 @@ async function onLogout(): Promise<void> {
 }
 
 function selectContact(contact: Contact): void {
-  contactsStore.selectedUid = contact.uid
+  contactsStore.selectedId = contact.id
+  closeEditor()
+}
+
+function openEditor(): void {
+  saveError.value = null
+  photo.value = undefined
+  photoError.value = null
+  newCategory.value = ''
+}
+
+function closeEditor(): void {
   isEditing.value = false
   isCreating.value = false
+  saveError.value = null
 }
 
 function startCreate(): void {
-  contactsStore.selectedUid = null
+  if (readOnly.value) return
+  contactsStore.selectedId = null
+  Object.assign(form, emptyForm())
+  openEditor()
   isEditing.value = false
   isCreating.value = true
-  resetForm()
 }
 
 function startEdit(): void {
-  if (!contactsStore.selectedContact) return
+  const c = contactsStore.selectedContact
+  if (!c || readOnly.value) return
+  Object.assign(form, formFrom(c))
+  openEditor()
   isCreating.value = false
   isEditing.value = true
-  const c = contactsStore.selectedContact
-  form.fn = c.fn
-  form.givenName = c.givenName ?? ''
-  form.familyName = c.familyName ?? ''
-  form.nickname = c.nickname ?? ''
-  form.organization = c.organization ?? ''
-  form.title = c.title ?? ''
-  form.role = c.role ?? ''
-  form.notes = c.notes ?? ''
-  form.bday = c.bday ?? ''
-  form.url = c.url ?? ''
-  form.emails = (c.emails ?? []).map((e) => ({ ...e }))
-  form.phones = (c.phones ?? []).map((p) => ({ ...p }))
-  form.addresses = (c.addresses ?? []).map((a) => ({ ...a }))
 }
 
 function cancelEdit(): void {
-  isEditing.value = false
-  isCreating.value = false
-  resetForm()
+  closeEditor()
 }
 
-function resetForm(): void {
-  form.fn = ''
-  form.givenName = ''
-  form.familyName = ''
-  form.nickname = ''
-  form.organization = ''
-  form.title = ''
-  form.role = ''
-  form.notes = ''
-  form.bday = ''
-  form.url = ''
-  form.emails = [{ type: 'WORK', value: '' }]
-  form.phones = [{ type: 'CELL', value: '' }]
-  form.addresses = []
+// Editing a type through the select keeps any extra tokens (e.g. 'voice') so
+// an untouched row round-trips as it was stored.
+function onType(v: LabeledValue | PostalAddress, known: readonly string[], e: Event): void {
+  const t = (e.target as HTMLSelectElement).value
+  const extra = v.types.filter((x) => !known.includes(x))
+  v.types = t ? [t, ...extra] : extra
 }
 
 function addEmail(): void {
-  form.emails.push({ type: 'WORK', value: '' })
+  form.emails.push({ value: '', types: ['work'], pref: false })
 }
-
-function removeEmail(idx: number): void {
-  form.emails.splice(idx, 1)
-}
-
 function addPhone(): void {
-  form.phones.push({ type: 'CELL', value: '' })
+  form.phones.push({ value: '', types: ['cell'], pref: false })
 }
-
-function removePhone(idx: number): void {
-  form.phones.splice(idx, 1)
+function addUrl(): void {
+  form.urls.push({ value: '', types: [], pref: false })
 }
-
 function addAddress(): void {
-  form.addresses.push({ type: 'HOME', street: '', locality: '', region: '', postalCode: '', country: '' })
+  form.addresses.push(emptyAddress())
 }
 
-function removeAddress(idx: number): void {
-  form.addresses.splice(idx, 1)
+function addCategory(name = newCategory.value): void {
+  for (const part of name.split(',')) {
+    const t = part.trim()
+    if (t && !form.categories.includes(t)) form.categories.push(t)
+  }
+  newCategory.value = ''
+}
+
+async function onPhoto(e: Event): Promise<void> {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  photoError.value = null
+  try {
+    photo.value = await imageToDataUri(file)
+  } catch (err) {
+    photoError.value = err instanceof Error ? err.message : 'Could not use that image'
+  }
+}
+
+function buildInput(): ContactInput {
+  return clone({
+    name: form.name,
+    fullName: form.fullName.trim() || undefined,
+    nickname: form.nickname,
+    org: form.org,
+    title: form.title,
+    emails: form.emails.filter((e) => e.value.trim()),
+    phones: form.phones.filter((p) => p.value.trim()),
+    urls: form.urls.filter((u) => u.value.trim()),
+    addresses: form.addresses.filter((a) =>
+      [a.poBox, a.extended, a.street, a.locality, a.region, a.postalCode, a.country].some((x) => x.trim()),
+    ),
+    birthday: form.birthday.trim(),
+    anniversary: form.anniversary.trim(),
+    notes: form.notes,
+    categories: form.categories,
+    ...(photo.value !== undefined ? { photo: photo.value } : {}),
+  })
 }
 
 async function saveContact(): Promise<void> {
-  if (!contactsStore.activeBookId) return
-
-  const given = form.givenName?.trim() || undefined
-  const family = form.familyName?.trim() || undefined
-  const full = form.fn.trim() || [given, family].filter(Boolean).join(' ') || 'Unnamed'
-
-  const payload: ContactFields = {
-    fn: full,
-    givenName: given,
-    familyName: family,
-    nickname: form.nickname?.trim() || undefined,
-    organization: form.organization?.trim() || undefined,
-    title: form.title?.trim() || undefined,
-    role: form.role?.trim() || undefined,
-    notes: form.notes?.trim() || undefined,
-    bday: form.bday?.trim() || undefined,
-    url: form.url?.trim() || undefined,
-    emails: form.emails.map((e) => ({ type: e.type, value: e.value.trim() })).filter((e) => e.value),
-    phones: form.phones.map((p) => ({ type: p.type, value: p.value.trim() })).filter((p) => p.value),
-    addresses: form.addresses.filter(
-      (a) => a.street?.trim() || a.locality?.trim() || a.region?.trim() || a.postalCode?.trim() || a.country?.trim(),
-    ),
-  }
-
-  if (isCreating.value) {
-    await contactsStore.createContact(contactsStore.activeBookId, payload)
-    isCreating.value = false
-  } else if (isEditing.value && contactsStore.selectedContact) {
-    const c = contactsStore.selectedContact
-    await contactsStore.updateContact(contactsStore.activeBookId, c.uid, payload, c.href, c.etag)
-    isEditing.value = false
+  const bookId = contactsStore.activeBookId
+  if (!bookId || saving.value || nameMissing.value || dateError.value) return
+  addCategory()
+  saving.value = true
+  saveError.value = null
+  try {
+    const input = buildInput()
+    if (isCreating.value) {
+      await contactsStore.createContact(bookId, input)
+    } else if (isEditing.value && contactsStore.selectedContact) {
+      await contactsStore.updateContact(contactsStore.selectedContact, input)
+    }
+    closeEditor()
+  } catch (err) {
+    saveError.value = err instanceof ApiRequestError ? err.message : 'Could not save this contact'
+  } finally {
+    saving.value = false
   }
 }
 
 async function onDeleteContact(): Promise<void> {
   const contact = confirmingDelete.value
   confirmingDelete.value = null
-  if (!contact || !contactsStore.activeBookId) return
-  await contactsStore.deleteContact(contactsStore.activeBookId, contact.uid, contact.href, contact.etag)
+  if (!contact) return
+  try {
+    await contactsStore.deleteContact(contact)
+  } catch (err) {
+    contactsStore.error = err instanceof ApiRequestError ? err.message : 'Could not delete this contact'
+  }
 }
+
+// --- Address books ------------------------------------------------------
 
 function toggleNewBookForm(): void {
   showNewBookForm.value = !showNewBookForm.value
+  bookError.value = null
   if (showNewBookForm.value) {
     newBookName.value = ''
     void nextTick(() => newBookInput.value?.focus())
@@ -177,24 +304,88 @@ function toggleNewBookForm(): void {
 async function createBook(): Promise<void> {
   const name = newBookName.value.trim()
   if (!name) return
-  await contactsStore.createAddressBook(name)
-  newBookName.value = ''
-  showNewBookForm.value = false
+  bookError.value = null
+  try {
+    await contactsStore.createAddressBook(name)
+    newBookName.value = ''
+    showNewBookForm.value = false
+    closeEditor()
+  } catch (err) {
+    bookError.value = err instanceof ApiRequestError ? err.message : 'Could not create the address book'
+  }
 }
 
 async function onDeleteBook(): Promise<void> {
   const id = confirmingDeleteBook.value
   confirmingDeleteBook.value = null
   if (!id) return
-  await contactsStore.deleteAddressBook(id)
+  try {
+    await contactsStore.deleteAddressBook(id)
+    closeEditor()
+  } catch (err) {
+    bookError.value = err instanceof ApiRequestError ? err.message : 'Could not delete the address book'
+  }
 }
 
-function getInitials(name: string): string {
-  const parts = name.trim().split(/\s+/)
-  if (parts.length >= 2) {
-    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+function pickBook(id: string): void {
+  closeEditor()
+  void contactsStore.selectAddressBook(id)
+}
+
+// --- Groups, import & export --------------------------------------------
+
+function startRename(name: string): void {
+  renamingGroup.value = name
+  renameValue.value = name
+}
+
+async function submitRename(): Promise<void> {
+  const from = renamingGroup.value
+  const to = renameValue.value.trim()
+  renamingGroup.value = null
+  if (!from || !to || to === from) return
+  try {
+    const failed = await contactsStore.renameGroup(from, to)
+    if (failed > 0) bookError.value = `${failed} contact${failed === 1 ? '' : 's'} could not be updated`
+  } catch (err) {
+    bookError.value = err instanceof ApiRequestError ? err.message : 'Could not rename the group'
   }
-  return name.slice(0, 2).toUpperCase() || '?'
+}
+
+async function onImport(e: Event): Promise<void> {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  const bookId = contactsStore.activeBookId
+  if (!file || !bookId) return
+  importMessage.value = null
+  try {
+    const result = await api.importVcf(bookId, await file.text())
+    importMessage.value = `Imported ${result.imported}, skipped ${result.skipped}`
+    await contactsStore.loadContacts(bookId, true)
+  } catch (err) {
+    importMessage.value = err instanceof ApiRequestError ? err.message : 'Import failed'
+  }
+}
+
+// --- Display helpers ----------------------------------------------------
+
+function addressLines(a: PostalAddress): string[] {
+  const cityLine =
+    settings.addressFormat === 'us'
+      ? [[a.locality, a.region].filter(Boolean).join(', '), a.postalCode].filter(Boolean).join(' ')
+      : [[a.postalCode, a.locality].filter(Boolean).join(' '), a.region].filter(Boolean).join(', ')
+  return [a.poBox, a.street, a.extended, cityLine, a.country].filter(Boolean)
+}
+
+function mapUrl(a: PostalAddress): string {
+  return `https://www.openstreetmap.org/search?query=${encodeURIComponent(addressLines(a).join(', '))}`
+}
+
+// Only link schemes that are safe to follow from a contact someone else may have authored.
+function safeHref(u: string): string | null {
+  const withScheme = /^[a-z][a-z0-9+.-]*:/i.test(u) ? u : `https://${u}`
+  return /^https?:\/\//i.test(withScheme) ? withScheme : null
 }
 
 const contactCountLabel = computed(() => {
@@ -212,13 +403,22 @@ const contactCountLabel = computed(() => {
       <div class="sidebar__actions">
         <button
           class="btn btn-primary sidebar__new"
-          :disabled="!contactsStore.activeBookId"
-          title="Create a new contact"
+          :disabled="!contactsStore.activeBookId || readOnly"
+          :title="readOnly ? 'This address book is read-only' : 'Create a new contact'"
           @click="startCreate"
         >
           <span aria-hidden="true">+</span> New Contact
         </button>
       </div>
+
+      <div v-if="contactsStore.activeBookId" class="sidebar__io">
+        <button type="button" class="btn btn-ghost btn-sm" :disabled="readOnly" @click="importInput?.click()">
+          Import .vcf
+        </button>
+        <a class="btn btn-ghost btn-sm" :href="api.exportUrl(contactsStore.activeBookId)" download>Export</a>
+        <input ref="importInput" type="file" accept=".vcf,text/vcard" hidden @change="onImport" />
+      </div>
+      <p v-if="importMessage" class="sidebar__note">{{ importMessage }}</p>
 
       <!-- Address Books Section (Mirrors CalendarList.vue) -->
       <div class="address-books">
@@ -252,12 +452,12 @@ const contactCountLabel = computed(() => {
             :key="book.id"
             class="address-books__item"
             :class="{ 'address-books__item--active': book.id === contactsStore.activeBookId }"
-            @click="contactsStore.selectAddressBook(book.id)"
+            @click="pickBook(book.id)"
           >
             <span class="address-books__icon" aria-hidden="true">📇</span>
             <span class="address-books__name" :title="book.displayName">{{ book.displayName }}</span>
             <button
-              v-if="contactsStore.addressBooks.length > 1"
+              v-if="contactsStore.addressBooks.length > 1 && !book.readOnly"
               type="button"
               class="icon-remove-btn address-books__delete"
               title="Delete address book"
@@ -265,6 +465,63 @@ const contactCountLabel = computed(() => {
             >
               ×
             </button>
+          </li>
+        </ul>
+        <p v-if="bookError" class="sidebar__error">{{ bookError }}</p>
+      </div>
+
+      <!-- Groups (vCard CATEGORIES) of the active address book -->
+      <div v-if="contactsStore.groups.length > 0" class="address-books">
+        <div class="address-books__header">
+          <h2 class="address-books__heading">Groups</h2>
+        </div>
+        <ul class="address-books__list">
+          <li
+            class="address-books__item"
+            :class="{ 'address-books__item--active': contactsStore.selectedGroup === null }"
+            @click="contactsStore.selectedGroup = null"
+          >
+            <span class="address-books__name">All contacts</span>
+            <span class="address-books__count">{{ contactsStore.contacts.length }}</span>
+          </li>
+          <li
+            v-for="g in contactsStore.groups"
+            :key="g.name"
+            class="address-books__item"
+            :class="{ 'address-books__item--active': contactsStore.selectedGroup === g.name }"
+            @click="contactsStore.selectedGroup = g.name"
+          >
+            <form
+              v-if="renamingGroup === g.name"
+              class="address-books__rename"
+              @click.stop
+              @submit.prevent="submitRename"
+              @keydown.esc="renamingGroup = null"
+            >
+              <input v-model="renameValue" type="text" class="address-books__new-input" autofocus />
+            </form>
+            <template v-else>
+              <span class="address-books__name" :title="g.name">{{ g.name }}</span>
+              <span class="address-books__count">{{ g.count }}</span>
+              <button
+                v-if="!readOnly"
+                type="button"
+                class="icon-remove-btn address-books__delete"
+                title="Rename group"
+                @click.stop="startRename(g.name)"
+              >
+                ✎
+              </button>
+            </template>
+          </li>
+          <li
+            v-if="contactsStore.ungroupedCount > 0"
+            class="address-books__item"
+            :class="{ 'address-books__item--active': contactsStore.selectedGroup === UNGROUPED }"
+            @click="contactsStore.selectedGroup = UNGROUPED"
+          >
+            <span class="address-books__name">Not grouped</span>
+            <span class="address-books__count">{{ contactsStore.ungroupedCount }}</span>
           </li>
         </ul>
       </div>
@@ -310,7 +567,8 @@ const contactCountLabel = computed(() => {
             <span class="contacts-count">{{ contactCountLabel }}</span>
           </div>
 
-          <div v-if="contactsStore.loading && contactsStore.contacts.length === 0" class="pane-state">Loading contacts...</div>
+          <div v-if="contactsStore.error" class="pane-state pane-state--error">{{ contactsStore.error }}</div>
+          <div v-else-if="contactsStore.loading && contactsStore.contacts.length === 0" class="pane-state">Loading contacts...</div>
           <div v-else-if="contactsStore.filteredContacts.length === 0" class="pane-state">
             <p v-if="contactsStore.searchQuery">No contacts match your search.</p>
             <p v-else>No contacts in this address book.</p>
@@ -318,16 +576,16 @@ const contactCountLabel = computed(() => {
           <ul v-else class="contact-items">
             <li
               v-for="contact in contactsStore.filteredContacts"
-              :key="contact.uid"
+              :key="contact.id"
               class="contact-item"
-              :class="{ 'contact-item--active': contact.uid === contactsStore.selectedUid && !isCreating }"
+              :class="{ 'contact-item--active': contact.id === contactsStore.selectedId && !isCreating }"
               @click="selectContact(contact)"
             >
-              <div class="contact-item__avatar">{{ getInitials(contact.fn) }}</div>
+              <ContactAvatar class="contact-item__avatar" :contact="contact" />
               <div class="contact-item__info">
-                <span class="contact-item__name">{{ contact.fn }}</span>
+                <span class="contact-item__name">{{ contact.fullName }}</span>
                 <span class="contact-item__sub">
-                  {{ contact.organization || contact.emails[0]?.value || contact.phones[0]?.value || '' }}
+                  {{ contact.org || contact.emails[0]?.value || contact.phones[0]?.value || '' }}
                 </span>
               </div>
             </li>
@@ -337,36 +595,78 @@ const contactCountLabel = computed(() => {
         <!-- Right Column: Contact Details / Edit View -->
         <section class="contact-detail-pane">
           <!-- Editor Mode -->
-          <div v-if="isCreating || isEditing" class="detail-card edit-card">
+          <div v-if="editing" class="detail-card edit-card">
             <div class="edit-card__header">
               <h2>{{ isCreating ? 'New Contact' : 'Edit Contact' }}</h2>
               <div class="edit-card__actions">
-                <button type="button" class="btn btn-ghost" @click="cancelEdit">Cancel</button>
-                <button type="button" class="btn btn-primary" @click="saveContact">Save</button>
+                <button type="button" class="btn btn-ghost" :disabled="saving" @click="cancelEdit">Cancel</button>
+                <button
+                  type="button"
+                  class="btn btn-primary"
+                  :disabled="saving || nameMissing || !!dateError"
+                  @click="saveContact"
+                >
+                  {{ saving ? 'Saving…' : 'Save' }}
+                </button>
               </div>
             </div>
 
             <form class="edit-form" @submit.prevent="saveContact">
+              <p v-if="saveError" class="edit-form__error">{{ saveError }}</p>
+
+              <div class="photo-row">
+                <ContactAvatar class="photo-row__avatar" :contact="previewContact" :preview-src="previewSrc" />
+                <label class="btn btn-secondary btn-sm">
+                  Choose photo
+                  <input type="file" accept="image/*" hidden @change="onPhoto" />
+                </label>
+                <button v-if="showRemovePhoto" type="button" class="btn btn-ghost btn-sm" @click="photo = null">
+                  Remove
+                </button>
+                <span v-if="photoError" class="edit-form__error">{{ photoError }}</span>
+              </div>
+
               <div class="form-row">
                 <div class="form-group flex-1">
                   <label>First Name</label>
-                  <input v-model="form.givenName" type="text" class="input" placeholder="First name" />
+                  <input v-model="form.name.given" type="text" class="input" placeholder="First name" />
                 </div>
                 <div class="form-group flex-1">
                   <label>Last Name</label>
-                  <input v-model="form.familyName" type="text" class="input" placeholder="Last name" />
+                  <input v-model="form.name.family" type="text" class="input" placeholder="Last name" />
                 </div>
               </div>
 
-              <div class="form-group">
-                <label>Full Display Name (optional)</label>
-                <input v-model="form.fn" type="text" class="input" placeholder="Leave empty to auto-generate" />
+              <div class="form-row">
+                <div class="form-group flex-1">
+                  <label>Prefix</label>
+                  <input v-model="form.name.prefix" type="text" class="input" placeholder="Dr." />
+                </div>
+                <div class="form-group flex-1">
+                  <label>Middle</label>
+                  <input v-model="form.name.additional" type="text" class="input" placeholder="Middle name" />
+                </div>
+                <div class="form-group flex-1">
+                  <label>Suffix</label>
+                  <input v-model="form.name.suffix" type="text" class="input" placeholder="Jr." />
+                </div>
+              </div>
+
+              <div class="form-row">
+                <div class="form-group flex-1">
+                  <label>Nickname</label>
+                  <input v-model="form.nickname" type="text" class="input" placeholder="Nickname" />
+                </div>
+                <div class="form-group flex-1">
+                  <label>Full Display Name (optional)</label>
+                  <input v-model="form.fullName" type="text" class="input" placeholder="Leave empty to auto-generate" />
+                </div>
               </div>
 
               <div class="form-row">
                 <div class="form-group flex-1">
                   <label>Organization</label>
-                  <input v-model="form.organization" type="text" class="input" placeholder="Company or Org" />
+                  <input v-model="form.org" type="text" class="input" placeholder="Company or Org" />
                 </div>
                 <div class="form-group flex-1">
                   <label>Job Title</label>
@@ -381,13 +681,19 @@ const contactCountLabel = computed(() => {
                   <button type="button" class="btn-text" @click="addEmail">+ Add Email</button>
                 </div>
                 <div v-for="(em, idx) in form.emails" :key="idx" class="multi-row">
-                  <select v-model="em.type" class="select select-sm">
-                    <option value="WORK">Work</option>
-                    <option value="HOME">Home</option>
-                    <option value="OTHER">Other</option>
+                  <select
+                    :value="primaryType(em.types, EMAIL_TYPES)"
+                    class="select select-sm"
+                    aria-label="Email type"
+                    @change="onType(em, EMAIL_TYPES, $event)"
+                  >
+                    <option value="">Other</option>
+                    <option v-for="t in EMAIL_TYPES" :key="t" :value="t">{{ typeName(t) }}</option>
                   </select>
                   <input v-model="em.value" type="email" class="input flex-1" placeholder="email@example.com" />
-                  <button type="button" class="icon-remove-btn" @click="removeEmail(idx)">×</button>
+                  <button type="button" class="icon-remove-btn" aria-label="Remove email" @click="form.emails.splice(idx, 1)">
+                    ×
+                  </button>
                 </div>
               </div>
 
@@ -398,14 +704,42 @@ const contactCountLabel = computed(() => {
                   <button type="button" class="btn-text" @click="addPhone">+ Add Phone</button>
                 </div>
                 <div v-for="(ph, idx) in form.phones" :key="idx" class="multi-row">
-                  <select v-model="ph.type" class="select select-sm">
-                    <option value="CELL">Mobile</option>
-                    <option value="WORK">Work</option>
-                    <option value="HOME">Home</option>
-                    <option value="MAIN">Main</option>
+                  <select
+                    :value="primaryType(ph.types, PHONE_TYPES)"
+                    class="select select-sm"
+                    aria-label="Phone type"
+                    @change="onType(ph, PHONE_TYPES, $event)"
+                  >
+                    <option value="">Other</option>
+                    <option v-for="t in PHONE_TYPES" :key="t" :value="t">{{ typeName(t) }}</option>
                   </select>
                   <input v-model="ph.value" type="tel" class="input flex-1" placeholder="+1 (555) 000-0000" />
-                  <button type="button" class="icon-remove-btn" @click="removePhone(idx)">×</button>
+                  <button type="button" class="icon-remove-btn" aria-label="Remove phone" @click="form.phones.splice(idx, 1)">
+                    ×
+                  </button>
+                </div>
+              </div>
+
+              <!-- Website Rows -->
+              <div class="form-section">
+                <div class="form-section__header">
+                  <label>Websites</label>
+                  <button type="button" class="btn-text" @click="addUrl">+ Add Website</button>
+                </div>
+                <div v-for="(u, idx) in form.urls" :key="idx" class="multi-row">
+                  <select
+                    :value="primaryType(u.types, URL_TYPES)"
+                    class="select select-sm"
+                    aria-label="Website type"
+                    @change="onType(u, URL_TYPES, $event)"
+                  >
+                    <option value="">Other</option>
+                    <option v-for="t in URL_TYPES" :key="t" :value="t">{{ typeName(t) }}</option>
+                  </select>
+                  <input v-model="u.value" type="text" class="input flex-1" placeholder="https://example.com" />
+                  <button type="button" class="icon-remove-btn" aria-label="Remove website" @click="form.urls.splice(idx, 1)">
+                    ×
+                  </button>
                 </div>
               </div>
 
@@ -417,34 +751,76 @@ const contactCountLabel = computed(() => {
                 </div>
                 <div v-for="(ad, idx) in form.addresses" :key="idx" class="address-box">
                   <div class="address-box__header">
-                    <select v-model="ad.type" class="select select-sm">
-                      <option value="HOME">Home</option>
-                      <option value="WORK">Work</option>
-                      <option value="OTHER">Other</option>
+                    <select
+                      :value="primaryType(ad.types, ADDRESS_TYPES)"
+                      class="select select-sm"
+                      aria-label="Address type"
+                      @change="onType(ad, ADDRESS_TYPES, $event)"
+                    >
+                      <option value="">Other</option>
+                      <option v-for="t in ADDRESS_TYPES" :key="t" :value="t">{{ typeName(t) }}</option>
                     </select>
-                    <button type="button" class="icon-remove-btn" @click="removeAddress(idx)">×</button>
+                    <button type="button" class="icon-remove-btn" aria-label="Remove address" @click="form.addresses.splice(idx, 1)">
+                      ×
+                    </button>
                   </div>
                   <input v-model="ad.street" type="text" class="input" placeholder="Street Address" />
-                  <div class="form-row">
+                  <input v-model="ad.extended" type="text" class="input" placeholder="Apt, suite, unit (line 2)" />
+                  <div v-if="settings.addressFormat === 'us'" class="form-row">
                     <input v-model="ad.locality" type="text" class="input flex-1" placeholder="City" />
-                    <input v-model="ad.region" type="text" class="input flex-1" placeholder="State/Region" />
+                    <input v-model="ad.region" type="text" class="input flex-1" placeholder="State" />
+                    <input v-model="ad.postalCode" type="text" class="input flex-1" placeholder="ZIP code" />
                   </div>
-                  <div class="form-row">
-                    <input v-model="ad.postalCode" type="text" class="input flex-1" placeholder="Postal Code" />
-                    <input v-model="ad.country" type="text" class="input flex-1" placeholder="Country" />
+                  <div v-else class="form-row">
+                    <input v-model="ad.postalCode" type="text" class="input flex-1" placeholder="Postal code" />
+                    <input v-model="ad.locality" type="text" class="input flex-1" placeholder="City" />
+                    <input v-model="ad.region" type="text" class="input flex-1" placeholder="State / region" />
                   </div>
+                  <input v-model="ad.country" type="text" class="input" placeholder="Country" />
                 </div>
               </div>
 
               <div class="form-row">
                 <div class="form-group flex-1">
                   <label>Birthday</label>
-                  <input v-model="form.bday" type="date" class="input" />
+                  <input v-model="form.birthday" type="text" class="input" placeholder="1990-01-31 or --01-31" />
                 </div>
                 <div class="form-group flex-1">
-                  <label>Website</label>
-                  <input v-model="form.url" type="url" class="input" placeholder="https://..." />
+                  <label>Anniversary</label>
+                  <input v-model="form.anniversary" type="text" class="input" placeholder="2015-06-20" />
                 </div>
+              </div>
+              <p v-if="dateError" class="edit-form__error">{{ dateError }}</p>
+
+              <!-- Groups -->
+              <div class="form-section">
+                <div class="form-section__header">
+                  <label>Groups</label>
+                </div>
+                <div v-if="form.categories.length" class="chips">
+                  <span v-for="g in form.categories" :key="g" class="chip">
+                    {{ g }}
+                    <button
+                      type="button"
+                      aria-label="Remove group"
+                      @click="form.categories.splice(form.categories.indexOf(g), 1)"
+                    >
+                      ×
+                    </button>
+                  </span>
+                </div>
+                <input
+                  v-model="newCategory"
+                  type="text"
+                  class="input"
+                  list="group-suggestions"
+                  placeholder="Add to group…"
+                  @keydown.enter.prevent="addCategory()"
+                  @change="addCategory()"
+                />
+                <datalist id="group-suggestions">
+                  <option v-for="g in categorySuggestions" :key="g" :value="g" />
+                </datalist>
               </div>
 
               <div class="form-group">
@@ -457,48 +833,61 @@ const contactCountLabel = computed(() => {
           <!-- View Mode: Contact Selected -->
           <div v-else-if="contactsStore.selectedContact" class="detail-card">
             <div class="detail-header">
-              <div class="detail-avatar">{{ getInitials(contactsStore.selectedContact.fn) }}</div>
+              <ContactAvatar class="detail-avatar" :contact="contactsStore.selectedContact" />
               <div class="detail-titles">
-                <h1 class="detail-name">{{ contactsStore.selectedContact.fn }}</h1>
-                <p
-                  v-if="contactsStore.selectedContact.title || contactsStore.selectedContact.organization"
-                  class="detail-org"
-                >
-                  {{
-                    [contactsStore.selectedContact.title, contactsStore.selectedContact.organization]
-                      .filter(Boolean)
-                      .join(' • ')
-                  }}
+                <h1 class="detail-name">{{ contactsStore.selectedContact.fullName }}</h1>
+                <p v-if="contactsStore.selectedContact.nickname" class="detail-org">
+                  “{{ contactsStore.selectedContact.nickname }}”
+                </p>
+                <p v-if="contactsStore.selectedContact.title || contactsStore.selectedContact.org" class="detail-org">
+                  {{ [contactsStore.selectedContact.title, contactsStore.selectedContact.org].filter(Boolean).join(' • ') }}
+                </p>
+                <p v-if="contactsStore.selectedContact.categories.length" class="chips chips--detail">
+                  <span v-for="g in contactsStore.selectedContact.categories" :key="g" class="chip">{{ g }}</span>
                 </p>
               </div>
-              <div class="detail-actions">
+              <div v-if="!readOnly" class="detail-actions">
                 <button type="button" class="btn btn-secondary" @click="startEdit">Edit</button>
-                <button
-                  type="button"
-                  class="btn btn-danger"
-                  @click="confirmingDelete = contactsStore.selectedContact"
-                >
+                <button type="button" class="btn btn-danger" @click="confirmingDelete = contactsStore.selectedContact">
                   Delete
                 </button>
               </div>
             </div>
 
             <div class="detail-body">
+              <!-- Phones -->
+              <div v-if="contactsStore.selectedContact.phones.length > 0" class="detail-group">
+                <span class="detail-label">Phone</span>
+                <div v-for="(ph, i) in contactsStore.selectedContact.phones" :key="i" class="detail-entry">
+                  <a :href="`tel:${ph.value.replace(/[^\d+*#]/g, '')}`" class="detail-link">{{ ph.value }}</a>
+                  <span v-if="typeLabel(ph.types)" class="badge">{{ typeLabel(ph.types) }}</span>
+                </div>
+              </div>
+
               <!-- Emails -->
               <div v-if="contactsStore.selectedContact.emails.length > 0" class="detail-group">
                 <span class="detail-label">Email</span>
                 <div v-for="(em, i) in contactsStore.selectedContact.emails" :key="i" class="detail-entry">
                   <a :href="`mailto:${em.value}`" class="detail-link">{{ em.value }}</a>
-                  <span v-if="em.type" class="badge">{{ em.type }}</span>
+                  <span v-if="typeLabel(em.types)" class="badge">{{ typeLabel(em.types) }}</span>
                 </div>
               </div>
 
-              <!-- Phones -->
-              <div v-if="contactsStore.selectedContact.phones.length > 0" class="detail-group">
-                <span class="detail-label">Phone</span>
-                <div v-for="(ph, i) in contactsStore.selectedContact.phones" :key="i" class="detail-entry">
-                  <a :href="`tel:${ph.value}`" class="detail-link">{{ ph.value }}</a>
-                  <span v-if="ph.type" class="badge">{{ ph.type }}</span>
+              <!-- Websites -->
+              <div v-if="contactsStore.selectedContact.urls.length > 0" class="detail-group">
+                <span class="detail-label">Website</span>
+                <div v-for="(u, i) in contactsStore.selectedContact.urls" :key="i" class="detail-entry">
+                  <a
+                    v-if="safeHref(u.value)"
+                    :href="safeHref(u.value)!"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="detail-link"
+                  >
+                    {{ u.value }}
+                  </a>
+                  <template v-else>{{ u.value }}</template>
+                  <span v-if="typeLabel(u.types)" class="badge">{{ typeLabel(u.types) }}</span>
                 </div>
               </div>
 
@@ -506,29 +895,21 @@ const contactCountLabel = computed(() => {
               <div v-if="contactsStore.selectedContact.addresses.length > 0" class="detail-group">
                 <span class="detail-label">Address</span>
                 <div v-for="(ad, i) in contactsStore.selectedContact.addresses" :key="i" class="detail-address">
-                  <span v-if="ad.type" class="badge mb-1">{{ ad.type }}</span>
-                  <p v-if="ad.street">{{ ad.street }}</p>
-                  <p v-if="ad.locality || ad.region || ad.postalCode">
-                    {{ [ad.locality, ad.region, ad.postalCode].filter(Boolean).join(', ') }}
-                  </p>
-                  <p v-if="ad.country">{{ ad.country }}</p>
-                </div>
-              </div>
-
-              <!-- Birthday -->
-              <div v-if="contactsStore.selectedContact.bday" class="detail-group">
-                <span class="detail-label">Birthday</span>
-                <div class="detail-entry">{{ contactsStore.selectedContact.bday }}</div>
-              </div>
-
-              <!-- Website -->
-              <div v-if="contactsStore.selectedContact.url" class="detail-group">
-                <span class="detail-label">Website</span>
-                <div class="detail-entry">
-                  <a :href="contactsStore.selectedContact.url" target="_blank" rel="noopener" class="detail-link">
-                    {{ contactsStore.selectedContact.url }}
+                  <span v-if="typeLabel(ad.types)" class="badge mb-1">{{ typeLabel(ad.types) }}</span>
+                  <a :href="mapUrl(ad)" target="_blank" rel="noopener noreferrer" class="detail-link">
+                    <p v-for="(line, j) in addressLines(ad)" :key="j">{{ line }}</p>
                   </a>
                 </div>
+              </div>
+
+              <!-- Birthday / Anniversary -->
+              <div v-if="contactsStore.selectedContact.birthday" class="detail-group">
+                <span class="detail-label">Birthday</span>
+                <div class="detail-entry">{{ formatDate(contactsStore.selectedContact.birthday) }}</div>
+              </div>
+              <div v-if="contactsStore.selectedContact.anniversary" class="detail-group">
+                <span class="detail-label">Anniversary</span>
+                <div class="detail-entry">{{ formatDate(contactsStore.selectedContact.anniversary) }}</div>
               </div>
 
               <!-- Notes -->
@@ -536,6 +917,11 @@ const contactCountLabel = computed(() => {
                 <span class="detail-label">Notes</span>
                 <div class="detail-notes">{{ contactsStore.selectedContact.notes }}</div>
               </div>
+
+              <p class="detail-foot">
+                {{ contactsStore.activeBook?.displayName }}<template v-if="readOnly"> · read-only</template> · vCard
+                {{ contactsStore.selectedContact.version }}
+              </p>
             </div>
           </div>
 
@@ -550,7 +936,7 @@ const contactCountLabel = computed(() => {
               </svg>
               <h3>No contact selected</h3>
               <p>Select a contact from the list or create a new one.</p>
-              <button class="btn btn-primary mt-3" @click="startCreate">+ New Contact</button>
+              <button v-if="!readOnly" class="btn btn-primary mt-3" @click="startCreate">+ New Contact</button>
             </div>
           </div>
         </section>
@@ -563,7 +949,7 @@ const contactCountLabel = computed(() => {
     <ConfirmDialog
       v-if="confirmingDelete"
       title="Delete Contact"
-      :message="`Are you sure you want to delete ${confirmingDelete.fn}?`"
+      :message="`Are you sure you want to delete ${confirmingDelete.fullName}?`"
       confirm-label="Delete"
       @confirm="onDeleteContact"
       @cancel="confirmingDelete = null"
@@ -1220,5 +1606,102 @@ const contactCountLabel = computed(() => {
 
 .mt-3 {
   margin-top: 1rem;
+}
+
+/* Added alongside the data-model port: groups, import/export, photo, chips */
+.sidebar__io {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.sidebar__io .btn {
+  flex: 1;
+  text-align: center;
+  text-decoration: none;
+}
+
+.sidebar__note,
+.sidebar__error {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+
+.sidebar__error,
+.edit-form__error,
+.pane-state--error {
+  color: var(--color-danger, #c0392b);
+}
+
+.address-books__count {
+  font-size: 0.75rem;
+  color: var(--color-text-faint);
+}
+
+.address-books__rename {
+  flex: 1;
+}
+
+.photo-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.photo-row__avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-size: 1.2rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.edit-form__error {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.4rem;
+}
+
+.chips--detail {
+  margin: 0.4rem 0 0;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-size: 0.78rem;
+}
+
+.chip button {
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
+.detail-foot {
+  margin: 1rem 0 0;
+  font-size: 0.78rem;
+  color: var(--color-text-faint);
 }
 </style>

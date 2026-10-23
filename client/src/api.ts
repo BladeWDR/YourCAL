@@ -6,12 +6,14 @@ import type {
   Contact,
   CreateAddressBookInput,
   CreateCalendarInput,
-  CreateContactInput,
+  ContactInput,
   CreateEventInput,
   DeleteEventInput,
+  ImportResult,
   LoginRequest,
   OwnedShare,
   PendingShare,
+  RenameGroupResult,
   SessionInfo,
   ShareCalendarInput,
   ShareCalendarResult,
@@ -159,31 +161,30 @@ export const api = {
   // Address books & contacts
   getAddressBooks: () => request<AddressBook[]>('/addressbooks'),
   createAddressBook: (input: CreateAddressBookInput) =>
-    request<AddressBook>('/addressbooks', {
-      method: 'POST',
-      body: JSON.stringify(input),
-    }),
-  deleteAddressBook: (addressBookId: string) =>
-    request<void>(`/addressbooks/${addressBookId}`, {
+    request<AddressBook>('/addressbooks', { method: 'POST', body: JSON.stringify(input) }),
+  deleteAddressBook: (bookId: string) => request<void>(`/addressbooks/${bookId}`, { method: 'DELETE' }),
+  getContacts: (bookId: string) => request<Contact[]>(`/addressbooks/${bookId}/contacts`),
+  createContact: (bookId: string, body: ContactInput) =>
+    request<Contact>(`/addressbooks/${bookId}/contacts`, { method: 'POST', body: JSON.stringify(body) }),
+  updateContact: (bookId: string, body: UpdateContactInput) =>
+    request<Contact>(`/addressbooks/${bookId}/contacts`, { method: 'PUT', body: JSON.stringify(body) }),
+  deleteContact: (bookId: string, href: string, etag: string) =>
+    request<void>(`/addressbooks/${bookId}/contacts?href=${encodeURIComponent(href)}&etag=${encodeURIComponent(etag)}`, {
       method: 'DELETE',
     }),
-  getContacts: (addressBookId: string) =>
-    request<Contact[]>(`/addressbooks/${addressBookId}/contacts`),
-  createContact: (addressBookId: string, input: CreateContactInput) =>
-    request<Contact>(`/addressbooks/${addressBookId}/contacts`, {
+  renameGroup: (bookId: string, from: string, to: string) =>
+    request<RenameGroupResult>(`/addressbooks/${bookId}/groups/rename`, {
       method: 'POST',
-      body: JSON.stringify(input),
+      body: JSON.stringify({ from, to }),
     }),
-  updateContact: (addressBookId: string, uid: string, input: UpdateContactInput) =>
-    request<Contact>(`/addressbooks/${addressBookId}/contacts/${encodeURIComponent(uid)}`, {
-      method: 'PUT',
-      body: JSON.stringify(input),
+  importVcf: (bookId: string, vcf: string) =>
+    request<ImportResult>(`/addressbooks/${bookId}/import`, {
+      method: 'POST',
+      body: vcf,
+      headers: { 'Content-Type': 'text/vcard' },
     }),
-  deleteContact: (addressBookId: string, uid: string, href: string, etag: string | null) => {
-    const params = new URLSearchParams({ href })
-    if (etag) params.set('etag', etag)
-    return request<void>(`/addressbooks/${addressBookId}/contacts/${encodeURIComponent(uid)}?${params.toString()}`, {
-      method: 'DELETE',
-    })
-  },
+  // Plain URLs for <img src> / navigated downloads; the session cookie rides along same-origin.
+  photoUrl: (bookId: string, href: string, etag: string) =>
+    `/api/addressbooks/${bookId}/photo?href=${encodeURIComponent(href)}&v=${encodeURIComponent(etag)}`,
+  exportUrl: (bookId: string) => `/api/addressbooks/${bookId}/export`,
 }

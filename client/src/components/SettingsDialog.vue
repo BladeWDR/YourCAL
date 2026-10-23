@@ -6,6 +6,7 @@ import { useSessionStore } from '../stores/session.js'
 import {
   DEFAULT_EVENT_LENGTHS,
   useSettingsStore,
+  type AddressFormat,
   type CalendarSortOrder,
   type CalendarViewType,
   type DefaultCalendarMode,
@@ -33,6 +34,11 @@ const calendarSortOrderModel = computed<CalendarSortOrder>({
 const timeFormatModel = computed<TimeFormat>({
   get: () => settingsStore.timeFormat,
   set: (value) => settingsStore.setTimeFormat(value),
+})
+
+const addressFormatModel = computed<AddressFormat>({
+  get: () => settingsStore.addressFormat,
+  set: (value) => settingsStore.setAddressFormat(value),
 })
 
 const defaultViewModel = computed<CalendarViewType>({
@@ -195,6 +201,14 @@ function toggleDefaultVisible(id: string): void {
         <select v-model="timeFormatModel">
           <option value="12h">12-hour</option>
           <option value="24h">24-hour</option>
+        </select>
+      </label>
+
+      <label class="dialog__field dialog__field--row">
+        <span>Address format</span>
+        <select v-model="addressFormatModel">
+          <option value="us">US (city, state ZIP)</option>
+          <option value="intl">International (postal code, city)</option>
         </select>
       </label>
 
