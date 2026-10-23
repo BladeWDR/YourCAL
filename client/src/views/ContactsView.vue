@@ -502,16 +502,21 @@ const contactCountLabel = computed(() => {
             </form>
             <template v-else>
               <span class="address-books__name" :title="g.name">{{ g.name }}</span>
-              <span class="address-books__count">{{ g.count }}</span>
-              <button
-                v-if="!readOnly"
-                type="button"
-                class="icon-remove-btn address-books__delete"
-                title="Rename group"
-                @click.stop="startRename(g.name)"
-              >
-                ✎
-              </button>
+              <!-- The count and the rename button share one right-aligned slot:
+                   the count shows at rest, the button replaces it on hover/focus. -->
+              <span class="address-books__trail">
+                <span class="address-books__count">{{ g.count }}</span>
+                <button
+                  v-if="!readOnly"
+                  type="button"
+                  class="address-books__edit"
+                  title="Rename group"
+                  aria-label="Rename group"
+                  @click.stop="startRename(g.name)"
+                >
+                  ✎
+                </button>
+              </span>
             </template>
           </li>
           <li
@@ -1636,6 +1641,65 @@ const contactCountLabel = computed(() => {
 .address-books__count {
   font-size: 0.75rem;
   color: var(--color-text-faint);
+}
+
+/* Count and rename button stacked in one grid cell, right-aligned, so every
+   row's number lines up at the right edge and nothing shifts on hover. */
+.address-books__trail {
+  display: inline-grid;
+  align-items: center;
+  justify-items: end;
+  flex-shrink: 0;
+}
+
+.address-books__trail > * {
+  grid-area: 1 / 1;
+}
+
+.address-books__edit {
+  padding: 0 0.1rem;
+  border: none;
+  background: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+.address-books__edit:hover {
+  color: var(--color-primary);
+}
+
+.address-books__item:hover .address-books__trail .address-books__count,
+.address-books__item:focus-within .address-books__trail .address-books__count {
+  opacity: 0;
+}
+
+.address-books__item:hover .address-books__edit,
+.address-books__item:focus-within .address-books__edit {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* No hover on touch screens: show the button next to the count instead. */
+@media (hover: none) {
+  .address-books__trail {
+    display: inline-flex;
+    gap: 0.4rem;
+  }
+
+  .address-books__item:hover .address-books__trail .address-books__count {
+    opacity: 1;
+  }
+
+  .address-books__edit {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 
 .address-books__rename {
