@@ -9,6 +9,8 @@ import type {
   ContactInput,
   CreateEventInput,
   DeleteEventInput,
+  GroupMembersInput,
+  GroupMembersResult,
   ImportResult,
   LoginRequest,
   OwnedShare,
@@ -18,6 +20,7 @@ import type {
   ShareCalendarInput,
   ShareCalendarResult,
   SharePermission,
+  TransferContactInput,
   UnsubscribeResult,
   UpdateCalendarInput,
   UpdateContactInput,
@@ -172,6 +175,10 @@ export const api = {
     request<void>(`/addressbooks/${bookId}/contacts?href=${encodeURIComponent(href)}&etag=${encodeURIComponent(etag)}`, {
       method: 'DELETE',
     }),
+  transferContact: (bookId: string, body: TransferContactInput) =>
+    request<Contact>(`/addressbooks/${bookId}/contacts/transfer`, { method: 'POST', body: JSON.stringify(body) }),
+  setGroupMembers: (bookId: string, body: GroupMembersInput) =>
+    request<GroupMembersResult>(`/addressbooks/${bookId}/groups/members`, { method: 'POST', body: JSON.stringify(body) }),
   renameGroup: (bookId: string, from: string, to: string) =>
     request<RenameGroupResult>(`/addressbooks/${bookId}/groups/rename`, {
       method: 'POST',

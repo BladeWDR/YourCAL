@@ -17,7 +17,7 @@ import {
   typeName,
   URL_TYPES,
 } from '../lib/labels.js'
-import { UNGROUPED, useContactsStore } from '../stores/contacts.js'
+import { ALL_BOOKS, UNGROUPED, useContactsStore } from '../stores/contacts.js'
 import { useSessionStore } from '../stores/session.js'
 import { useSettingsStore } from '../stores/settings.js'
 
@@ -41,7 +41,19 @@ const renameValue = ref('')
 const importInput = ref<HTMLInputElement | null>(null)
 const importMessage = ref<string | null>(null)
 
-const readOnly = computed(() => !!contactsStore.activeBook?.readOnly)
+// The selected book (a concrete one, not "all") being read-only blocks creating,
+// importing and renaming groups; whether one contact can be edited depends on
+// the book that contact lives in.
+const activeReadOnly = computed(() => !!contactsStore.activeBook?.readOnly)
+const canCreate = computed(() => !!contactsStore.createTargetBook && !activeReadOnly.value)
+const selectedReadOnly = computed(() => {
+  const c = contactsStore.selectedContact
+  return c ? contactsStore.isReadOnly(c) : false
+})
+const createBookId = ref('')
+const showUrl = ref(false)
+const urlCopied = ref(false)
+const urlInput = ref<HTMLInputElement | null>(null)
 const editing = computed(() => isCreating.value || isEditing.value)
 
 // --- Edit/create form ---------------------------------------------------
@@ -174,7 +186,9 @@ function closeEditor(): void {
 }
 
 function startCreate(): void {
-  if (readOnly.value) return
+  const target = contactsStore.createTargetBook
+  if (!canCreate.value || !target) return
+  createBookId.value = target.id
   contactsStore.selectedId = null
   Object.assign(form, emptyForm())
   openEditor()
@@ -184,7 +198,7 @@ function startCreate(): void {
 
 function startEdit(): void {
   const c = contactsStore.selectedContact
-  if (!c || readOnly.value) return
+  if (!c || selectedReadOnly.value) return
   Object.assign(form, formFrom(c))
   openEditor()
   isCreating.value = false
@@ -259,7 +273,7 @@ function buildInput(): ContactInput {
 }
 
 async function saveContact(): Promise<void> {
-  const bookId = contactsStore.activeBookId
+  const bookId = isCreating.value ? createBookId.value : (contactsStore.selectedContact?.addressBookId ?? '')
   if (!bookId || saving.value || nameMissing.value || dateError.value) return
   addCategory()
   saving.value = true
@@ -369,7 +383,7 @@ async function onImport(e: Event): Promise<void> {
   const input = e.target as HTMLInputElement
   const file = input.files?.[0]
   input.value = ''
-  const bookId = contactsStore.activeBookId
+  const bookId = contactsStore.activeBook?.id
   if (!file || !bookId) return
   importMessage.value = null
   try {
@@ -378,6 +392,21 @@ async function onImport(e: Event): Promise<void> {
     await contactsStore.loadContacts(bookId, true)
   } catch (err) {
     importMessage.value = err instanceof ApiRequestError ? err.message : 'Import failed'
+  }
+}
+
+async function copyUrl(): Promise<void> {
+  const url = contactsStore.activeBook?.url
+  if (!url) return
+  urlInput.value?.select()
+  try {
+    // Only available in a secure context (https or localhost); otherwise the
+    // text is left selected for a manual copy.
+    await navigator.clipboard.writeText(url)
+    urlCopied.value = true
+    setTimeout(() => (urlCopied.value = false), 1500)
+  } catch {
+    urlCopied.value = false
   }
 }
 
@@ -416,20 +445,49 @@ const contactCountLabel = computed(() => {
       <div class="sidebar__actions">
         <button
           class="btn btn-primary sidebar__new"
-          :disabled="!contactsStore.activeBookId || readOnly"
-          :title="readOnly ? 'This address book is read-only' : 'Create a new contact'"
+          :disabled="!canCreate"
+          :title="canCreate ? 'Create a new contact' : 'This address book is read-only'"
           @click="startCreate"
         >
           <span aria-hidden="true">+</span> New Contact
         </button>
       </div>
 
-      <div v-if="contactsStore.activeBookId" class="sidebar__io">
-        <button type="button" class="btn btn-ghost btn-sm" :disabled="readOnly" @click="importInput?.click()">
+      <div v-if="contactsStore.activeBook" class="sidebar__io">
+        <button type="button" class="btn btn-ghost btn-sm" :disabled="activeReadOnly" @click="importInput?.click()">
           Import .vcf
         </button>
-        <a class="btn btn-ghost btn-sm" :href="api.exportUrl(contactsStore.activeBookId)" download>Export</a>
+        <a class="btn btn-ghost btn-sm" :href="api.exportUrl(contactsStore.activeBook.id)" download>Export</a>
+        <button
+          type="button"
+          class="btn btn-ghost btn-sm"
+          :aria-pressed="showUrl"
+          title="Show this address book's CardDAV URL"
+          @click="showUrl = !showUrl"
+        >
+          URL
+        </button>
         <input ref="importInput" type="file" accept=".vcf,text/vcard" hidden @change="onImport" />
+      </div>
+      <p v-else-if="contactsStore.isAllBooks" class="sidebar__note">
+        Pick one address book to import into or export from it.
+      </p>
+      <div v-if="showUrl && contactsStore.activeBook" class="sidebar__url">
+        <label for="carddav-url">CardDAV URL — use this to add the address book in a phone or Thunderbird</label>
+        <div class="sidebar__url-row">
+          <input
+            id="carddav-url"
+            ref="urlInput"
+            class="address-books__new-input"
+            type="text"
+            readonly
+            :value="contactsStore.activeBook.url"
+            @focus="($event.target as HTMLInputElement).select()"
+          />
+          <button type="button" class="btn btn-secondary btn-sm" @click="copyUrl">
+            {{ urlCopied ? 'Copied' : 'Copy' }}
+          </button>
+        </div>
       </div>
       <p v-if="importMessage" class="sidebar__note">{{ importMessage }}</p>
 
@@ -460,6 +518,15 @@ const contactCountLabel = computed(() => {
         </form>
 
         <ul class="address-books__list">
+          <li
+            v-if="contactsStore.addressBooks.length > 1"
+            class="address-books__item"
+            :class="{ 'address-books__item--active': contactsStore.isAllBooks }"
+            @click="pickBook(ALL_BOOKS)"
+          >
+            <span class="address-books__icon" aria-hidden="true">📚</span>
+            <span class="address-books__name">All address books</span>
+          </li>
           <li
             v-for="book in contactsStore.addressBooks"
             :key="book.id"
@@ -527,7 +594,7 @@ const contactCountLabel = computed(() => {
               <span class="address-books__trail">
                 <span class="address-books__count">{{ g.count }}</span>
                 <button
-                  v-if="!readOnly"
+                  v-if="!activeReadOnly"
                   type="button"
                   class="address-books__edit"
                   title="Rename group"
@@ -613,6 +680,9 @@ const contactCountLabel = computed(() => {
                   {{ contact.org || contact.emails[0]?.value || contact.phones[0]?.value || '' }}
                 </span>
               </div>
+              <span v-if="contactsStore.isAllBooks" class="contact-item__book">
+                {{ contactsStore.bookOf(contact)?.displayName }}
+              </span>
             </li>
           </ul>
         </section>
@@ -638,6 +708,13 @@ const contactCountLabel = computed(() => {
 
             <form class="edit-form" @submit.prevent="saveContact">
               <p v-if="saveError" class="edit-form__error">{{ saveError }}</p>
+
+              <div v-if="isCreating && contactsStore.writableBooks.length > 1" class="form-group">
+                <label for="new-contact-book">Address book</label>
+                <select id="new-contact-book" v-model="createBookId" class="select">
+                  <option v-for="b in contactsStore.writableBooks" :key="b.id" :value="b.id">{{ b.displayName }}</option>
+                </select>
+              </div>
 
               <div class="photo-row">
                 <ContactAvatar class="photo-row__avatar" :contact="previewContact" :preview-src="previewSrc" />
@@ -871,7 +948,7 @@ const contactCountLabel = computed(() => {
                   <span v-for="g in contactsStore.selectedContact.categories" :key="g" class="chip">{{ g }}</span>
                 </p>
               </div>
-              <div v-if="!readOnly" class="detail-actions">
+              <div v-if="!selectedReadOnly" class="detail-actions">
                 <button type="button" class="btn btn-secondary" @click="startEdit">Edit</button>
                 <button type="button" class="btn btn-danger" @click="confirmingDelete = contactsStore.selectedContact">
                   Delete
@@ -944,7 +1021,10 @@ const contactCountLabel = computed(() => {
               </div>
 
               <p class="detail-foot">
-                {{ contactsStore.activeBook?.displayName }}<template v-if="readOnly"> · read-only</template> · vCard
+                {{ contactsStore.bookOf(contactsStore.selectedContact)?.displayName }}<template v-if="selectedReadOnly">
+                  · read-only</template
+                >
+                · vCard
                 {{ contactsStore.selectedContact.version }}
               </p>
             </div>
@@ -961,7 +1041,7 @@ const contactCountLabel = computed(() => {
               </svg>
               <h3>No contact selected</h3>
               <p>Select a contact from the list or create a new one.</p>
-              <button v-if="!readOnly" class="btn btn-primary mt-3" @click="startCreate">+ New Contact</button>
+              <button v-if="canCreate" class="btn btn-primary mt-3" @click="startCreate">+ New Contact</button>
             </div>
           </div>
         </section>
@@ -1791,5 +1871,37 @@ const contactCountLabel = computed(() => {
   margin: 1rem 0 0;
   font-size: 0.78rem;
   color: var(--color-text-faint);
+}
+
+.sidebar__url {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.sidebar__url label {
+  font-size: 0.74rem;
+  color: var(--color-text-muted);
+}
+
+.sidebar__url-row {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.sidebar__url-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.contact-item__book {
+  margin-left: auto;
+  max-width: 6rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.7rem;
+  color: var(--color-text-faint);
+  flex-shrink: 0;
 }
 </style>
