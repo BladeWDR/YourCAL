@@ -1661,6 +1661,10 @@ const contactCountLabel = computed(() => {
 .address-books__count {
   font-size: 0.75rem;
   color: var(--color-text-faint);
+  /* It is faded out (opacity: 0) while the rename button takes its place, and
+     a transparent element still catches clicks -- and paints above a plain
+     sibling -- so without this it would sit on top of the button. */
+  pointer-events: none;
 }
 
 /* Count and rename button stacked in one grid cell, right-aligned, so every
