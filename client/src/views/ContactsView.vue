@@ -7,9 +7,12 @@ import ConfirmDialog from '../components/ConfirmDialog.vue'
 import BookMenu from '../components/BookMenu.vue'
 import ContactAvatar from '../components/ContactAvatar.vue'
 import GroupMenu from '../components/GroupMenu.vue'
+import MergeDialog from '../components/MergeDialog.vue'
 import SettingsDialog from '../components/SettingsDialog.vue'
 import {
+  addressLines,
   ADDRESS_TYPES,
+  autoName,
   EMAIL_TYPES,
   formatDate,
   imageToDataUri,
@@ -55,6 +58,9 @@ const selectedReadOnly = computed(() => {
 const createBookId = ref('')
 const selectMode = ref(false)
 const confirmingBatchDelete = ref(false)
+const mergePair = ref<[Contact, Contact] | null>(null)
+const merging = ref(false)
+const mergeError = ref<string | null>(null)
 const working = ref(false)
 const status = ref<{ text: string; error: boolean } | null>(null)
 let statusTimer: ReturnType<typeof setTimeout> | undefined
@@ -110,12 +116,6 @@ function emptyForm(): FormState {
     notes: '',
     categories: [],
   }
-}
-
-/** Mirrors the server's rule for the FN it generates when no display name is given. */
-function autoName(n: StructuredName, org: string): string {
-  const assembled = [n.prefix, n.given, n.additional, n.family, n.suffix].filter((x) => x.trim()).join(' ')
-  return assembled || org.trim()
 }
 
 function formFrom(c: Contact): FormState {
@@ -296,6 +296,34 @@ function onBatchGroup(change: { add: string } | { remove: string }): Promise<voi
     const name = 'add' in change ? change.add : change.remove
     report('add' in change ? `Added to “${name}”:` : `Removed from “${name}”:`, r)
   })
+}
+
+/** Exactly two ticked contacts, both editable, can be merged. */
+const canMerge = computed(() => checked.value.length === 2 && checkedWritable.value)
+
+function startMerge(): void {
+  if (!canMerge.value) return
+  // Present them in list order so "first card" is the one that sorts first.
+  const order = contactsStore.filteredContacts.map((c) => c.id)
+  const [x, y] = [...checked.value].sort((p, q) => order.indexOf(p.id) - order.indexOf(q.id))
+  mergeError.value = null
+  mergePair.value = [x, y]
+}
+
+async function onMerge(survivor: Contact, other: Contact, input: ContactInput): Promise<void> {
+  if (merging.value) return
+  merging.value = true
+  mergeError.value = null
+  try {
+    const merged = await contactsStore.mergeContacts(survivor, other, input)
+    mergePair.value = null
+    contactsStore.clearChecked()
+    flash(`Merged into ${merged.fullName}`)
+  } catch (err) {
+    mergeError.value = err instanceof Error ? err.message : 'Could not merge these contacts'
+  } finally {
+    merging.value = false
+  }
 }
 
 function onBatchDelete(): Promise<void> {
@@ -547,16 +575,12 @@ async function copyUrl(): Promise<void> {
 
 // --- Display helpers ----------------------------------------------------
 
-function addressLines(a: PostalAddress): string[] {
-  const cityLine =
-    settings.addressFormat === 'us'
-      ? [[a.locality, a.region].filter(Boolean).join(', '), a.postalCode].filter(Boolean).join(' ')
-      : [[a.postalCode, a.locality].filter(Boolean).join(' '), a.region].filter(Boolean).join(', ')
-  return [a.poBox, a.street, a.extended, cityLine, a.country].filter(Boolean)
+function addressLinesFor(a: PostalAddress): string[] {
+  return addressLines(a, settings.addressFormat)
 }
 
 function mapUrl(a: PostalAddress): string {
-  return `https://www.openstreetmap.org/search?query=${encodeURIComponent(addressLines(a).join(', '))}`
+  return `https://www.openstreetmap.org/search?query=${encodeURIComponent(addressLinesFor(a).join(', '))}`
 }
 
 // Only link schemes that are safe to follow from a contact someone else may have authored.
@@ -826,6 +850,16 @@ const contactCountLabel = computed(() => {
                 @add="(name) => onBatchGroup({ add: name })"
                 @remove="(name) => onBatchGroup({ remove: name })"
               />
+              <button
+                v-if="contactsStore.checkedIds.length === 2"
+                type="button"
+                class="btn btn-secondary btn-sm"
+                :disabled="!canMerge || working"
+                :title="canMerge ? 'Combine these two contacts into one' : 'Some are in a read-only address book'"
+                @click="startMerge"
+              >
+                Merge
+              </button>
               <button
                 type="button"
                 class="btn btn-danger btn-sm"
@@ -1202,7 +1236,7 @@ const contactCountLabel = computed(() => {
                 <div v-for="(ad, i) in contactsStore.selectedContact.addresses" :key="i" class="detail-address">
                   <span v-if="typeLabel(ad.types)" class="badge mb-1">{{ typeLabel(ad.types) }}</span>
                   <a :href="mapUrl(ad)" target="_blank" rel="noopener noreferrer" class="detail-link">
-                    <p v-for="(line, j) in addressLines(ad)" :key="j">{{ line }}</p>
+                    <p v-for="(line, j) in addressLinesFor(ad)" :key="j">{{ line }}</p>
                   </a>
                 </div>
               </div>
@@ -1261,6 +1295,16 @@ const contactCountLabel = computed(() => {
       confirm-label="Delete"
       @confirm="onDeleteContact"
       @cancel="confirmingDelete = null"
+    />
+
+    <MergeDialog
+      v-if="mergePair"
+      :a="mergePair[0]"
+      :b="mergePair[1]"
+      :saving="merging"
+      :error="mergeError"
+      @cancel="mergePair = null"
+      @merge="onMerge"
     />
 
     <ConfirmDialog

@@ -1,3 +1,5 @@
+import type { PostalAddress, StructuredName } from '@yourdav/shared'
+
 export const PHONE_TYPES = ['cell', 'home', 'work', 'fax', 'voice', 'pager'] as const
 export const EMAIL_TYPES = ['home', 'work', 'internet'] as const
 export const URL_TYPES = ['home', 'work'] as const
@@ -72,4 +74,19 @@ export async function imageToDataUri(file: File, maxSide = 256): Promise<string>
   if (!ctx) throw new Error('Could not process image')
   ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
   return canvas.toDataURL('image/jpeg', 0.85)
+}
+
+/** Mirrors the server's rule for the FN it generates when no display name is given. */
+export function autoName(n: StructuredName, org: string): string {
+  const assembled = [n.prefix, n.given, n.additional, n.family, n.suffix].filter((x) => x.trim()).join(' ')
+  return assembled || org.trim()
+}
+
+/** The lines of an address, ordered for a US ("city, state ZIP") or international ("postal code city") reader. */
+export function addressLines(a: PostalAddress, format: 'us' | 'intl'): string[] {
+  const cityLine =
+    format === 'us'
+      ? [[a.locality, a.region].filter(Boolean).join(', '), a.postalCode].filter(Boolean).join(' ')
+      : [[a.postalCode, a.locality].filter(Boolean).join(' '), a.region].filter(Boolean).join(', ')
+  return [a.poBox, a.street, a.extended, cityLine, a.country].filter(Boolean)
 }
