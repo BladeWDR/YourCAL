@@ -11,7 +11,7 @@ import { davFetch } from '../dav/auth.js'
 import { createClient } from '../dav/client.js'
 import type { DavContext } from '../dav/context.js'
 import { assertHrefSameHost } from '../dav/hostAllowlist.js'
-import { isCalendarReadOnly } from '../dav/privileges.js'
+import { isCollectionReadOnly } from '../dav/privileges.js'
 import {
   deleteRadicaleSharesForPath,
   escapeXml,
@@ -43,7 +43,7 @@ export class DavCalendarStore implements CalendarStore {
     // PROPFIND per calendar -- tsdav's fetchCalendars() has no way to
     // include it in the batched PROPFIND it already does. Run these in
     // parallel rather than serially awaiting each one.
-    const readOnlyFlags = await Promise.all(eventCalendars.map((cal) => isCalendarReadOnly(ctx, String(cal.url))))
+    const readOnlyFlags = await Promise.all(eventCalendars.map((cal) => isCollectionReadOnly(ctx, String(cal.url))))
 
     return eventCalendars.map((cal, i) => {
       // Baikal marks a calendar shared *to* the current user with a

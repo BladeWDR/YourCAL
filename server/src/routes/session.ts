@@ -41,10 +41,10 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
         if (err instanceof DisallowedHostError) {
           return reply.code(403).send({ error: 'host_not_allowed', message: err.message })
         }
-        req.log.info({ err }, 'CalDAV login failed')
+        req.log.info({ err }, 'DAV login failed')
         return reply
           .code(401)
-          .send({ error: 'invalid_credentials', message: 'Could not authenticate with the CalDAV server' })
+          .send({ error: 'invalid_credentials', message: 'Could not authenticate with the DAV server' })
       } finally {
         activeLogins--
       }

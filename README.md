@@ -85,10 +85,10 @@ docker compose up -d
 ### Either way
 
 The app listens on `http://localhost:3000`. Log in with credentials for
-any CalDAV server reachable from the container (set `ALLOWED_CALDAV_HOSTS`
+any CalDAV server reachable from the container (set `ALLOWED_DAV_HOSTS`
 to restrict which hosts it's allowed to connect to).
 
-> **Security note:** with `ALLOWED_CALDAV_HOSTS` unset, anyone who can reach
+> **Security note:** with `ALLOWED_DAV_HOSTS` unset, anyone who can reach
 > the login page can make the server send requests to any host it can reach
 > (including your internal network). That's fine on a trusted LAN; if the
 > app is exposed to the internet, set the allowlist. Behind a reverse proxy,

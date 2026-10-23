@@ -13,7 +13,7 @@ services:
       # permitted to talk to -- see server/src/dav/hostAllowlist.ts. Unset
       # (the default) allows any host, which is fine for a trusted personal
       # instance but worth locking down if this is reachable more broadly.
-      ALLOWED_CALDAV_HOSTS: ${ALLOWED_CALDAV_HOSTS:-}
+      ALLOWED_DAV_HOSTS: ${ALLOWED_DAV_HOSTS:-}
       # Set to true behind a reverse proxy so login rate limiting uses the
       # real client IP; leave false when exposed directly.
       TRUST_PROXY: ${TRUST_PROXY:-false}

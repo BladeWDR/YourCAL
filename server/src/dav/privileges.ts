@@ -3,10 +3,10 @@ import { davFetch } from './auth.js'
 import type { DavContext } from './context.js'
 
 /**
- * Reads real per-calendar write access via the standard WebDAV ACL
+ * Reads real per-collection (calendar or address book) write access via the standard WebDAV ACL
  * `current-user-privilege-set` property (RFC 3744) -- tsdav has no
  * built-in support for this (its `fetchCalendars()` requests a fixed prop
- * list that doesn't include it), so this is a raw PROPFIND per calendar,
+ * list that doesn't include it), so this is a raw PROPFIND per collection,
  * following the same raw-fetch + xml-js pattern already used throughout
  * `sharing.ts` for other properties tsdav doesn't cover.
  *
@@ -46,9 +46,9 @@ function collectPrivileges(node: unknown, out: Set<string>): void {
  * in this codebase, so a server without this feature doesn't break
  * discovery or turn every calendar read-only by accident.
  */
-export async function isCalendarReadOnly(ctx: DavContext, calendarUrl: string): Promise<boolean> {
+export async function isCollectionReadOnly(ctx: DavContext, collectionUrl: string): Promise<boolean> {
   try {
-    const res = await davFetch(ctx, calendarUrl, {
+    const res = await davFetch(ctx, collectionUrl, {
       method: 'PROPFIND',
       headers: { 'Content-Type': 'application/xml', Depth: '0' },
       body: '<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:current-user-privilege-set/></d:prop></d:propfind>',

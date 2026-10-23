@@ -3,11 +3,11 @@ import { config } from '../config.js'
 export class DisallowedHostError extends Error {}
 
 export function assertHostAllowed(serverUrl: string): void {
-  if (!config.allowedCalDavHosts) return
+  if (!config.allowedDavHosts) return
 
   const host = new URL(serverUrl).hostname
-  if (!config.allowedCalDavHosts.includes(host)) {
-    throw new DisallowedHostError(`CalDAV host "${host}" is not on the allowlist`)
+  if (!config.allowedDavHosts.includes(host)) {
+    throw new DisallowedHostError(`DAV host "${host}" is not on the allowlist`)
   }
 }
 
@@ -16,7 +16,7 @@ export function assertHostAllowed(serverUrl: string): void {
  * pointing at a different host than the one the session authenticated
  * against -- without this, an authenticated user could pass an arbitrary
  * URL as `href` and have the server issue a WebDAV request to it carrying
- * their CalDAV credentials (SSRF + credential exfiltration).
+ * their DAV credentials (SSRF + credential exfiltration).
  */
 export function assertHrefSameHost(baseUrl: string, href: string): void {
   const base = new URL(baseUrl)
@@ -26,6 +26,6 @@ export function assertHrefSameHost(baseUrl: string, href: string): void {
   // exposed on the same box) would otherwise pass this check and still
   // receive the session's Basic-auth credentials.
   if (target.protocol !== base.protocol || target.hostname !== base.hostname || target.port !== base.port) {
-    throw new DisallowedHostError(`href "${href}" does not belong to the authenticated CalDAV host`)
+    throw new DisallowedHostError(`href "${href}" does not belong to the authenticated DAV host`)
   }
 }

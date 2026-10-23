@@ -814,7 +814,7 @@ split out.
   `@yourdav/client` — it's served as static files).
 - `docker-compose.yml` wires `SESSION_SECRET` (required, no default —
   `openssl rand -hex 32`, decoded as raw 32-byte key material),
-  `ALLOWED_CALDAV_HOSTS`, `CACHE_ENABLED`/`CACHE_SYNC_TTL_MS`, and a named
+  `ALLOWED_DAV_HOSTS`, `CACHE_ENABLED`/`CACHE_SYNC_TTL_MS`, and a named
   volume at `/app/data`. `.env.example` mirrors these.
 - **Gotcha, not fixed:** the Dockerfile sets `NODE_ENV=production`, which
   makes `session.ts` mark the cookie `Secure` — a browser won't send it
@@ -904,7 +904,7 @@ address book created via `MKCOL`).
 
 From an external review of the code:
 
-- **Login host policy is deliberately open.** With `ALLOWED_CALDAV_HOSTS`
+- **Login host policy is deliberately open.** With `ALLOWED_DAV_HOSTS`
   unset, `POST /api/session` will connect to any `serverUrl` (blind SSRF:
   it only ever answers 401/403/201). Not changed on purpose -- this is a
   generic CalDAV frontend and LAN servers are the main use case, so the

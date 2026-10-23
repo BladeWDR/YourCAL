@@ -45,11 +45,11 @@ async function main(): Promise<void> {
   })
 
   // A calendarId/href resolving to a different host than the authenticated
-  // CalDAV server is a rejected SSRF attempt, not a server bug -- surface it
+  // DAV server is a rejected SSRF attempt, not a server bug -- surface it
   // as 403, not the default 500 an uncaught throw would otherwise produce.
   app.setErrorHandler((err, req, reply) => {
     if (err instanceof DavAuthError) {
-      // The stored CalDAV credentials stopped working mid-session. End the
+      // The stored DAV credentials stopped working mid-session. End the
       // app session too (otherwise a reload's whoami would still pass and
       // land back here), and answer 401 so the client's session-expired
       // handling sends the user to /login.
