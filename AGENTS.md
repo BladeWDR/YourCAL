@@ -38,7 +38,9 @@ delete, read-only calendars, ICS export, calendar sharing (create / accept
 / unsubscribe / owner-side management), SQLite read-cache, calendar sort,
 undo toast, agenda / year / mini-month navigator, duplicate event /
 copy-paste, print view, 12h/24h time format setting, view options /
-new-event defaults, dark mode, auto-refresh.
+new-event defaults, dark mode, auto-refresh, CardDAV contacts support
+(address book discovery/create/delete, vCard 3.0 parsing & serialization,
+contact CRUD, master-detail UI, sidebar app switcher).
 
 ## Toolchain pins
 
@@ -831,6 +833,66 @@ env var, baked in by the Dockerfile `APP_VERSION` build arg: CI passes the
 git tag (`v0.4.0`) for tag builds and `dev` for `main`/dispatch builds.
 Unset (local `npm run dev`) also means `dev`. There's no `.git` in the
 image (`.dockerignore`), so it can't be derived from `git describe` there.
+
+## CardDAV contacts support
+
+Implemented and verified against real Radicale 3.8.3 (htpasswd auth,
+address book created via `MKCOL`).
+
+- **CardDAV Client Discovery**: `server/src/dav/client.ts` supports
+  `createClient(ctx, 'carddav')` (passing `defaultAccountType: 'carddav'`
+  to `tsdav`'s `DAVClient`). Discovery finds `addressbook-home-set` (stored
+  under `client.account.homeUrl`). The client instance is cached separately
+  from the CalDAV client using a compound cache key (`... \n carddav`),
+  evicted on logout/auth failure via `evictClient(ctx)`.
+- **vCard 3.0 Parser & Serializer**: `server/src/vcard/vcard.ts` uses
+  `ical.js` (`ICAL.parse`, `ICAL.Component`) for bidirectional conversion
+  between RFC 6350 / 2426 vCard format and typed `Contact` / `ContactFields`
+  models.
+  - Supports: Full formatted name (`FN`), structured name (`N`), nickname
+    (`NICKNAME`), organization (`ORG`), title (`TITLE`), role (`ROLE`),
+    multiple typed emails (`EMAIL`), multiple typed phones (`TEL`),
+    multiple typed postal addresses (`ADR`), birthday (`BDAY`), website
+    (`URL`), and notes (`NOTE`).
+  - Updating a contact parses the existing vCard first to preserve unknown
+    properties (such as `PHOTO` or vendor-specific `X-*` attributes).
+  - Unit-tested in `server/src/vcard/vcard.test.ts`.
+- **Address Book Store**: `server/src/store/DavAddressBookStore.ts` provides:
+  - `discoverAddressBooks`: discovers address book collections using
+    `client.fetchAddressBooks()`.
+  - `createAddressBook`: creates address books using raw `MKCOL` with
+    `<C:addressbook/>` resourcetype.
+  - `deleteAddressBook`: deletes collections via DAV `DELETE`.
+  - `getContacts`: fetches vCards via `client.fetchVCards()`, sorted by
+    `fn.localeCompare`.
+  - `createContact`: generates UUID filename and calls `client.createVCard()`.
+  - `updateContact`: fetches existing vCard to preserve unknown fields,
+    updates via `client.updateVCard()` with `If-Match` ETag header (maps
+    412 to `EtagConflictError`).
+  - `deleteContact`: deletes card via `client.deleteVCard()` with `If-Match`.
+  - SSRF protection: calls `assertHrefSameHost(ctx.baseUrl, url)` on all
+    decoded address book IDs and contact hrefs.
+- **API Routes**: `server/src/routes/contacts.ts` registered under
+  `/api/addressbooks`:
+  - `GET /api/addressbooks` & `POST /api/addressbooks`
+  - `DELETE /api/addressbooks/:id`
+  - `GET /api/addressbooks/:id/contacts` & `POST /api/addressbooks/:id/contacts`
+  - `PUT /api/addressbooks/:id/contacts/:uid` & `DELETE /api/addressbooks/:id/contacts/:uid`
+- **Frontend & Navigation**:
+  - `AppNavSwitcher.vue`: Segmented tab control at the top of the sidebar
+    toggling between Calendar (`/`) and Contacts (`/contacts`).
+  - `ContactsView.vue`: Master-detail view. Matches `CalendarView.vue` layout
+    dimensions (`.sidebar` 256px, padding `1.25rem 1rem`, gap `1.1rem`,
+    transparent background; `.main` padding `1.25rem` containing a surface
+    card with `--radius-lg` and `--color-border`), eliminating visual
+    shift when switching views and matching light/dark theme tokens.
+  - Sidebar contains address book selector, inline address book creation,
+    and user footer with Settings and Sign out.
+  - Middle pane contains real-time search filtering and contact list with
+    avatar badges.
+  - Right pane contains contact details (with clickable `mailto:` and `tel:`
+    links) or an edit/create form supporting dynamic email, phone, and
+    postal address rows.
 
 ## Security hardening
 
