@@ -1,4 +1,4 @@
-import type { EventFields } from '@yourcal/shared'
+import type { EventFields } from '@yourdav/shared'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   applyAll,

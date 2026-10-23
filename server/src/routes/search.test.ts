@@ -1,4 +1,4 @@
-import type { Calendar, CalendarObject } from '@yourcal/shared'
+import type { Calendar, CalendarObject } from '@yourdav/shared'
 import Fastify, { type FastifyInstance } from 'fastify'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DavContext } from '../dav/context.js'

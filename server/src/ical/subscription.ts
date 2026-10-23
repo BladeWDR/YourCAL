@@ -1,4 +1,4 @@
-import type { CalendarObject, TimeRange } from '@yourcal/shared'
+import type { CalendarObject, TimeRange } from '@yourdav/shared'
 import { createHash } from 'node:crypto'
 import ICAL from 'ical.js'
 import { safeFetchExternal } from '../dav/ssrf.js'

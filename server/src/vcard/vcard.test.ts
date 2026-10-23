@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { contactToVcard, vcardToContact } from './vcard.js'
-import type { ContactFields } from '@yourcal/shared'
+import type { ContactFields } from '@yourdav/shared'
 
 describe('vcard parser & serializer', () => {
   it('parses a full vCard correctly', () => {

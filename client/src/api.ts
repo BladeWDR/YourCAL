@@ -20,7 +20,7 @@ import type {
   UpdateCalendarInput,
   UpdateContactInput,
   UpdateEventInput,
-} from '@yourcal/shared'
+} from '@yourdav/shared'
 
 export class ApiRequestError extends Error {
   constructor(
@@ -39,7 +39,7 @@ export class ApiRequestError extends Error {
 // generic error and no indication the user needs to sign in again.
 // main.ts/App.vue owns the actual redirect so this module doesn't need to
 // import the router.
-export const SESSION_EXPIRED_EVENT = 'yourcal:session-expired'
+export const SESSION_EXPIRED_EVENT = 'yourdav:session-expired'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // Normalised through Headers rather than object-spread, which silently

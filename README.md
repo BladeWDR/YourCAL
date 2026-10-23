@@ -1,4 +1,4 @@
-# YourCal
+# YourDAV
 
 A self-hosted web calendar client for CalDAV servers (tested against
 [Radicale](https://radicale.org/) and [Baikal](https://sabre.io/baikal/)).
@@ -71,9 +71,9 @@ docker compose up -d --build
 ### Without a checkout (pulls the published image)
 
 Every push to `main` publishes an image to
-`ghcr.io/fuzzymistborn/yourcal:latest` (see
+`ghcr.io/fuzzymistborn/yourdav:latest` (see
 `.github/workflows/docker-publish.yml`; tagged releases also get
-`vX.Y.Z`/`vX.Y` tags). If you just want to run YourCal without cloning the
+`vX.Y.Z`/`vX.Y` tags). If you just want to run YourDAV without cloning the
 repo, grab `docker-compose.example.yml`, rename it to `docker-compose.yml`,
 create a `.env` next to it with at least `SESSION_SECRET` set (see
 `.env.example` above for the full list of variables), then:

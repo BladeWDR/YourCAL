@@ -1,4 +1,4 @@
-import type { SessionInfo } from '@yourcal/shared'
+import type { SessionInfo } from '@yourdav/shared'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { api, ApiRequestError } from '../api.js'

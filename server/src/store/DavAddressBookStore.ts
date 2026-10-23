@@ -4,7 +4,7 @@ import type {
   CreateAddressBookInput,
   CreateContactInput,
   ContactFields,
-} from '@yourcal/shared'
+} from '@yourdav/shared'
 import { createClient } from '../dav/client.js'
 import type { DavContext } from '../dav/context.js'
 import { davFetch } from '../dav/auth.js'

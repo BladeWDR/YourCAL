@@ -1,5 +1,5 @@
 import ICAL from 'ical.js'
-import type { Contact, ContactFields, ContactPostalAddress } from '@yourcal/shared'
+import type { Contact, ContactFields, ContactPostalAddress } from '@yourdav/shared'
 
 function formatType(typeParam: unknown): string | undefined {
   if (!typeParam) return undefined

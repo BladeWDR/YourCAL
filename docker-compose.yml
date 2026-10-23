@@ -1,5 +1,5 @@
 services:
-  yourcal:
+  yourdav:
     build: .
     ports:
       - "3000:3000"
@@ -48,8 +48,8 @@ services:
       # Only load-bearing when CACHE_ENABLED=true -- otherwise DavCalendarStore
       # is used directly with no local state to persist (see AGENTS.md's
       # "SQLite read-cache" section).
-      - yourcal-data:/app/data
+      - yourdav-data:/app/data
     restart: unless-stopped
 
 volumes:
-  yourcal-data:
+  yourdav-data:

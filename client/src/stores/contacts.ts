@@ -1,10 +1,10 @@
-import type { AddressBook, Contact, ContactFields, CreateContactInput } from '@yourcal/shared'
+import type { AddressBook, Contact, ContactFields, CreateContactInput } from '@yourdav/shared'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { api } from '../api.js'
 
 const FRESH_MS = 30_000
-const STORAGE_KEY_ACTIVE_BOOK = 'yourcal:active-address-book'
+const STORAGE_KEY_ACTIVE_BOOK = 'yourdav:active-address-book'
 
 export const useContactsStore = defineStore('contacts', () => {
   const addressBooks = ref<AddressBook[]>([])

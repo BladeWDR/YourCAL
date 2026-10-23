@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Calendar } from '@yourcal/shared'
+import type { Calendar } from '@yourdav/shared'
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { api, ApiRequestError } from '../api.js'
 import { triggerDownload } from '../lib/download.js'

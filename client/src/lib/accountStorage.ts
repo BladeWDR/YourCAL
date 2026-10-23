@@ -12,7 +12,7 @@ const ACCOUNT_SCOPED_KEYS = [
   // A whitelist of calendar ids -- left behind, it would hide every one of
   // the next user's calendars (none of their ids would be on it).
   'calendar.defaultVisibleCalendarIds',
-  'yourcal:active-address-book',
+  'yourdav:active-address-book',
 ]
 
 export function clearAccountStorage(): void {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Contact, ContactFields } from '@yourcal/shared'
+import type { Contact, ContactFields } from '@yourdav/shared'
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import AppNavSwitcher from '../components/AppNavSwitcher.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'

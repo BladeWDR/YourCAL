@@ -1,4 +1,4 @@
-import type { AlarmFields, CalendarObject, EventFields } from '@yourcal/shared'
+import type { AlarmFields, CalendarObject, EventFields } from '@yourdav/shared'
 import ICAL from 'ical.js'
 import { ensureTimezoneRegistered, registerEmbeddedTimezones } from './timezones.js'
 

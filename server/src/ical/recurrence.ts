@@ -1,4 +1,4 @@
-import type { CalendarObject, TimeRange } from '@yourcal/shared'
+import type { CalendarObject, TimeRange } from '@yourdav/shared'
 import ICAL from 'ical.js'
 import { buildCalendarObject, icalTimeToString } from './mapper.js'
 import { registerEmbeddedTimezones } from './timezones.js'

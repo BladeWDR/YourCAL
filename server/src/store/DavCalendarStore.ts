@@ -6,7 +6,7 @@ import type {
   TimeRange,
   UnsubscribeResult,
   UpdateCalendarInput,
-} from '@yourcal/shared'
+} from '@yourdav/shared'
 import { davFetch } from '../dav/auth.js'
 import { createClient } from '../dav/client.js'
 import type { DavContext } from '../dav/context.js'

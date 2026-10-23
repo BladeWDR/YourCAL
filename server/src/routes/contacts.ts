@@ -1,4 +1,4 @@
-import type { CreateAddressBookInput, CreateContactInput, UpdateContactInput } from '@yourcal/shared'
+import type { CreateAddressBookInput, CreateContactInput, UpdateContactInput } from '@yourdav/shared'
 import type { FastifyInstance } from 'fastify'
 import { EtagConflictError } from '../store/errors.js'
 import { DavAddressBookStore } from '../store/DavAddressBookStore.js'

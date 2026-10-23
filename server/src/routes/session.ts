@@ -1,4 +1,4 @@
-import type { LoginRequest, SessionInfo } from '@yourcal/shared'
+import type { LoginRequest, SessionInfo } from '@yourdav/shared'
 import rateLimit from '@fastify/rate-limit'
 import type { FastifyInstance } from 'fastify'
 import { config } from '../config.js'

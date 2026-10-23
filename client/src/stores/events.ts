@@ -1,4 +1,4 @@
-import type { CalendarObject, CreateEventInput, DeleteEventInput, UpdateEventInput } from '@yourcal/shared'
+import type { CalendarObject, CreateEventInput, DeleteEventInput, UpdateEventInput } from '@yourdav/shared'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { api } from '../api.js'

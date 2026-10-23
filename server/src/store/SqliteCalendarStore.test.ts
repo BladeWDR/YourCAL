@@ -6,7 +6,7 @@ import type {
   TimeRange,
   UnsubscribeResult,
   UpdateCalendarInput,
-} from '@yourcal/shared'
+} from '@yourdav/shared'
 import Database from 'better-sqlite3'
 import { beforeEach, describe, expect, it } from 'vitest'
 import type { DavContext } from '../dav/context.js'

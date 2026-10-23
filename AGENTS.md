@@ -1,7 +1,7 @@
 # AGENTS.md
 
 Monorepo: `shared` (types) / `server` (Fastify API) / `client` (Vue 3 SPA),
-npm workspaces. Package/workspace names are `yourcal` / `@yourcal/*`. The
+npm workspaces. Package/workspace names are `yourdav` / `@yourdav/*`. The
 CalDAV server is the sole identity provider — no local user store.
 
 Verification discipline throughout: features are driven against a real
@@ -807,11 +807,11 @@ split out.
   `node_modules`, each workspace's `package.json` + `dist`, and
   `client/dist`.
 - Depends on the npm-workspaces symlink layout:
-  `node_modules/@yourcal/{shared,server,client}` are relative symlinks, so
+  `node_modules/@yourdav/{shared,server,client}` are relative symlinks, so
   copying `node_modules` verbatim + recreating each `package.json`+`dist`
   at the same relative path makes them resolve without carrying `src/`.
   `client/package.json` is deliberately not copied (nothing `require()`s
-  `@yourcal/client` — it's served as static files).
+  `@yourdav/client` — it's served as static files).
 - `docker-compose.yml` wires `SESSION_SECRET` (required, no default —
   `openssl rand -hex 32`, decoded as raw 32-byte key material),
   `ALLOWED_CALDAV_HOSTS`, `CACHE_ENABLED`/`CACHE_SYNC_TTL_MS`, and a named

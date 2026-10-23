@@ -1,4 +1,4 @@
-import type { EventFields } from '@yourcal/shared'
+import type { EventFields } from '@yourdav/shared'
 import ICAL from 'ical.js'
 import { buildVeventComponent } from './mapper.js'
 import { registerEmbeddedTimezones } from './timezones.js'
