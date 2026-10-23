@@ -58,6 +58,25 @@ open items.
   </tr>
 </table>
 
+<table>
+  <tr>
+    <td><img src="screenshots/06-contacts.png" alt="Contacts"></td>
+    <td><img src="screenshots/07-contacts-edit.png" alt="Editing a contact"></td>
+  </tr>
+  <tr>
+    <td align="center">Contacts</td>
+    <td align="center">Editing a contact</td>
+  </tr>
+  <tr>
+    <td><img src="screenshots/08-contacts-batch.png" alt="Batch actions and move/copy"></td>
+    <td><img src="screenshots/09-contacts-merge.png" alt="Merging two duplicate contacts"></td>
+  </tr>
+  <tr>
+    <td align="center">Select several: move, copy, group, delete</td>
+    <td align="center">Merge duplicates</td>
+  </tr>
+</table>
+
 ## Stack
 
 npm workspaces monorepo:

@@ -48,7 +48,8 @@ server's own RRULE/ETag validation, which is still only checked by hand.
     follows `github.repository`, so no workflow change is needed);
   - tag the release as a major/breaking one (latest is `v0.5.1`) and put the
     README's "Upgrading from YourCal" section in the release notes;
-  - add contacts screenshots to the README (there are none yet);
+  - retake the calendar screenshots (`01`-`05`): they predate the app switcher
+    in the sidebar (the contacts ones, `06`-`09`, are current);
   - archive the old `projects/contacts` checkout (YourContacts, not a git repo);
   - rename the local checkout directory last, after merging.
 
