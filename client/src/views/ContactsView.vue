@@ -334,9 +334,22 @@ function pickBook(id: string): void {
 
 // --- Groups, import & export --------------------------------------------
 
+// Only one group is ever being renamed, so a plain function ref is enough
+// (a template ref inside v-for would be an array).
+let renameInputEl: HTMLInputElement | null = null
+function setRenameInput(el: unknown): void {
+  renameInputEl = el as HTMLInputElement | null
+}
+
 function startRename(name: string): void {
   renamingGroup.value = name
   renameValue.value = name
+  // Focus explicitly: `autofocus` is unreliable on elements added after load,
+  // and the blur handler that cancels the edit needs the input to have focus.
+  void nextTick(() => {
+    renameInputEl?.focus()
+    renameInputEl?.select()
+  })
 }
 
 async function submitRename(): Promise<void> {
@@ -498,7 +511,14 @@ const contactCountLabel = computed(() => {
               @submit.prevent="submitRename"
               @keydown.esc="renamingGroup = null"
             >
-              <input v-model="renameValue" type="text" class="address-books__new-input" autofocus />
+              <input
+                :ref="setRenameInput"
+                v-model="renameValue"
+                type="text"
+                class="address-books__new-input"
+                aria-label="Group name"
+                @blur="renamingGroup = null"
+              />
             </form>
             <template v-else>
               <span class="address-books__name" :title="g.name">{{ g.name }}</span>
