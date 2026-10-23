@@ -7,25 +7,25 @@ process.env.SESSION_SECRET ??= 'a'.repeat(64)
 describe('assertHostAllowed', () => {
   afterEach(() => {
     vi.resetModules()
-    delete process.env.ALLOWED_CALDAV_HOSTS
+    delete process.env.ALLOWED_DAV_HOSTS
   })
 
   it('allows any host when no allowlist is configured', async () => {
-    delete process.env.ALLOWED_CALDAV_HOSTS
+    delete process.env.ALLOWED_DAV_HOSTS
     vi.resetModules()
     const { assertHostAllowed } = await import('./hostAllowlist.js')
     expect(() => assertHostAllowed('https://anything.example.com/dav/')).not.toThrow()
   })
 
   it('allows a host present in the allowlist', async () => {
-    process.env.ALLOWED_CALDAV_HOSTS = 'caldav.example.com, other.example.com'
+    process.env.ALLOWED_DAV_HOSTS = 'caldav.example.com, other.example.com'
     vi.resetModules()
     const { assertHostAllowed } = await import('./hostAllowlist.js')
     expect(() => assertHostAllowed('https://caldav.example.com/dav/')).not.toThrow()
   })
 
   it('rejects a host not present in the allowlist', async () => {
-    process.env.ALLOWED_CALDAV_HOSTS = 'caldav.example.com'
+    process.env.ALLOWED_DAV_HOSTS = 'caldav.example.com'
     vi.resetModules()
     const { assertHostAllowed, DisallowedHostError } = await import('./hostAllowlist.js')
     expect(() => assertHostAllowed('https://evil.example.com/dav/')).toThrow(DisallowedHostError)

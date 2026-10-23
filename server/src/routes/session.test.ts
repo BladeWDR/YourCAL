@@ -9,7 +9,11 @@ import type { DavContext } from '../dav/context.js'
 process.env.SESSION_SECRET ??= 'a'.repeat(64)
 
 const verifyCredentials = vi.fn()
-vi.mock('../dav/discovery.js', () => ({ verifyCredentials: (...args: unknown[]) => verifyCredentials(...args) }))
+const supportsContacts = vi.fn()
+vi.mock('../dav/discovery.js', () => ({
+  verifyCredentials: (...args: unknown[]) => verifyCredentials(...args),
+  supportsContacts: (...args: unknown[]) => supportsContacts(...args),
+}))
 
 const detectAuthMethod = vi.fn()
 vi.mock('../dav/auth.js', () => ({ detectAuthMethod: (...args: unknown[]) => detectAuthMethod(...args) }))
@@ -46,6 +50,7 @@ async function buildApp(
 
 beforeEach(() => {
   vi.clearAllMocks()
+  supportsContacts.mockResolvedValue(true)
 })
 
 describe('POST /api/session', () => {
@@ -66,7 +71,11 @@ describe('POST /api/session', () => {
       payload: { serverUrl: 'https://caldav.example.com/dav/', username: 'alice', password: 'secret' },
     })
     expect(res.statusCode).toBe(201)
-    expect(res.json()).toMatchObject({ serverUrl: 'https://caldav.example.com/dav/', username: 'alice' })
+    expect(res.json()).toMatchObject({
+      serverUrl: 'https://caldav.example.com/dav/',
+      username: 'alice',
+      hasContacts: true,
+    })
     expect(sets).toEqual([
       ['dav', { baseUrl: 'https://caldav.example.com/dav/', username: 'alice', password: 'secret', authMethod: 'Basic' }],
     ])
@@ -127,7 +136,14 @@ describe('GET /api/session', () => {
     const { app } = await buildApp()
     const res = await app.inject({ method: 'GET', url: '/api/session' })
     expect(res.statusCode).toBe(200)
-    expect(res.json()).toMatchObject({ serverUrl: dav.baseUrl, username: dav.username })
+    expect(res.json()).toMatchObject({ serverUrl: dav.baseUrl, username: dav.username, hasContacts: true })
+  })
+
+  it('reports hasContacts: false for a CalDAV-only server', async () => {
+    supportsContacts.mockResolvedValue(false)
+    const { app } = await buildApp()
+    const res = await app.inject({ method: 'GET', url: '/api/session' })
+    expect(res.json()).toMatchObject({ hasContacts: false })
   })
 })
 

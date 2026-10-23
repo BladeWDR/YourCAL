@@ -2,7 +2,7 @@
 //  - `url`  : subscription feed URLs, which for Google/Nextcloud/etc. embed a
 //             secret token (`.../private-<hash>/basic.ics`) that grants read
 //             access to the whole calendar.
-//  - `href` : internal CalDAV object paths.
+//  - `href` : internal DAV object paths.
 //  - `q`    : the user's raw search text.
 const SENSITIVE_QUERY_KEYS = ['url', 'href', 'q']
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { EditScope } from '@yourcal/shared'
+import type { EditScope } from '@yourdav/shared'
 
 defineProps<{ verb: string }>()
 const emit = defineEmits<{ choose: [scope: EditScope]; cancel: [] }>()

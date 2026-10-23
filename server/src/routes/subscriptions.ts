@@ -1,4 +1,4 @@
-import type { CalendarObject } from '@yourcal/shared'
+import type { CalendarObject } from '@yourdav/shared'
 import type { FastifyInstance } from 'fastify'
 import { fetchSubscriptionEvents } from '../ical/subscription.js'
 import { requireSession } from './requireSession.js'

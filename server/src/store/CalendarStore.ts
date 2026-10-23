@@ -6,7 +6,7 @@ import type {
   TimeRange,
   UnsubscribeResult,
   UpdateCalendarInput,
-} from '@yourcal/shared'
+} from '@yourdav/shared'
 import type { DavContext } from '../dav/context.js'
 
 export interface ObjectRef {

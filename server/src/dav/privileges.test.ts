@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DavContext } from './context.js'
-import { isCalendarReadOnly } from './privileges.js'
+import { isCollectionReadOnly } from './privileges.js'
 
 const dav: DavContext = { baseUrl: 'https://caldav.example.com/dav/', username: 'alice', password: 'secret' }
 const calendarUrl = 'https://caldav.example.com/dav/cal1/'
@@ -14,36 +14,36 @@ beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn())
 })
 
-describe('isCalendarReadOnly', () => {
+describe('isCollectionReadOnly', () => {
   it('is false for an owner-shaped response (has bare "write")', async () => {
     vi.mocked(fetch).mockResolvedValue(new Response(privilegeSetXml('read', 'write'), { status: 207 }))
-    expect(await isCalendarReadOnly(dav, calendarUrl)).toBe(false)
+    expect(await isCollectionReadOnly(dav, calendarUrl)).toBe(false)
   })
 
   it('is false for a readwrite-share-recipient shape (read + write-content, no bare write)', async () => {
     vi.mocked(fetch).mockResolvedValue(new Response(privilegeSetXml('read', 'write-content'), { status: 207 }))
-    expect(await isCalendarReadOnly(dav, calendarUrl)).toBe(false)
+    expect(await isCollectionReadOnly(dav, calendarUrl)).toBe(false)
   })
 
   it('is true for a read-only-share-recipient shape (read only)', async () => {
     vi.mocked(fetch).mockResolvedValue(new Response(privilegeSetXml('read'), { status: 207 }))
-    expect(await isCalendarReadOnly(dav, calendarUrl)).toBe(true)
+    expect(await isCollectionReadOnly(dav, calendarUrl)).toBe(true)
   })
 
   it('fails open (false) on a non-OK HTTP response', async () => {
     vi.mocked(fetch).mockResolvedValue(new Response('forbidden', { status: 403 }))
-    expect(await isCalendarReadOnly(dav, calendarUrl)).toBe(false)
+    expect(await isCollectionReadOnly(dav, calendarUrl)).toBe(false)
   })
 
   it('fails open (false) when the privilege-set property is absent/unsupported', async () => {
     vi.mocked(fetch).mockResolvedValue(
       new Response('<?xml version="1.0"?><d:multistatus xmlns:d="DAV:"><d:response/></d:multistatus>', { status: 207 }),
     )
-    expect(await isCalendarReadOnly(dav, calendarUrl)).toBe(false)
+    expect(await isCollectionReadOnly(dav, calendarUrl)).toBe(false)
   })
 
   it('fails open (false) on a network error', async () => {
     vi.mocked(fetch).mockRejectedValue(new Error('network down'))
-    expect(await isCalendarReadOnly(dav, calendarUrl)).toBe(false)
+    expect(await isCollectionReadOnly(dav, calendarUrl)).toBe(false)
   })
 })

@@ -5,8 +5,8 @@ import type {
   ShareCalendarInput,
   UpdateCalendarInput,
   UpdateEventInput,
-} from '@yourcal/shared'
-import type { Calendar } from '@yourcal/shared'
+} from '@yourdav/shared'
+import type { Calendar } from '@yourdav/shared'
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import ICAL from 'ical.js'
 import { assertHrefSameHost } from '../dav/hostAllowlist.js'

@@ -1,4 +1,4 @@
-import type { EventFields, TimeRange } from '@yourcal/shared'
+import type { EventFields, TimeRange } from '@yourdav/shared'
 import { describe, expect, it } from 'vitest'
 import { calendarObjectToIcs } from './mapper.js'
 import { expandCalendarObject } from './recurrence.js'

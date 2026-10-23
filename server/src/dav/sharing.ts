@@ -1,4 +1,4 @@
-import type { OwnedShare, PendingShare, ShareCalendarInput, ShareCalendarResult, UnsubscribeResult } from '@yourcal/shared'
+import type { OwnedShare, PendingShare, ShareCalendarInput, ShareCalendarResult, UnsubscribeResult } from '@yourdav/shared'
 import { xml2js } from 'xml-js'
 import { decodeId, encodeId } from '../store/idCodec.js'
 import { davFetch } from './auth.js'

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { OwnedShare, SharePermission, ShareCalendarResult } from '@yourcal/shared'
+import type { OwnedShare, SharePermission, ShareCalendarResult } from '@yourdav/shared'
 import { onMounted, reactive, ref } from 'vue'
 import { api, ApiRequestError } from '../api.js'
 

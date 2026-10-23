@@ -1,8 +1,10 @@
 # AGENTS.md
 
 Monorepo: `shared` (types) / `server` (Fastify API) / `client` (Vue 3 SPA),
-npm workspaces. Package/workspace names are `yourcal` / `@yourcal/*`. The
-CalDAV server is the sole identity provider — no local user store.
+npm workspaces. Package/workspace names are `yourdav` / `@yourdav/*`. YourDAV
+is a calendar (CalDAV) and contacts (CardDAV) client in one app, formerly two
+projects (YourCal and YourContacts). The DAV server is the sole identity
+provider — no local user store.
 
 Verification discipline throughout: features are driven against a real
 CalDAV server with curl, not just typechecked. Automated tests
@@ -29,6 +31,25 @@ server's own RRULE/ETag validation, which is still only checked by hand.
 - **Frontend** has only been clicked through piecemeal in a real browser;
   no systematic pass over every dialog / drag / resize path.
 - **Docker** image is unbuilt/unrun (no Docker on this host) — see below.
+- **Contacts UI** is driven in headless Chromium for login, the combined view,
+  create/delete, group rename, selection, move/copy, batch group/delete,
+  merge and the CardDAV URL panel (see "Browser testing" below), and at the
+  API level against Radicale and Baikal (Basic and Digest). Not browser-tested:
+  the photo file picker, `.vcf` import/export buttons, the edit form beyond
+  create, the address-format setting, dark mode, and the Calendar half after
+  the merge. A CalDAV-only server is untested (the `hasContacts: false` path
+  is unit-tested only).
+- **Contacts: address-book sharing, address-book rename, and automatic
+  duplicate detection** are out of scope; create/delete exist, and merging
+  is manual (tick exactly two contacts).
+- **YourDAV release chores** (the merge of YourCal + YourContacts is on the
+  `yourdav` branch; these are what remains before shipping it):
+  - rename the GitHub repo to `YourDAV` (old URLs redirect; the CI image name
+    follows `github.repository`, so no workflow change is needed);
+  - tag the release as a major/breaking one (latest is `v0.5.1`) and put the
+    README's "Upgrading from YourCal" section in the release notes;
+  - archive the old `projects/contacts` checkout (YourContacts, not a git repo);
+  - rename the local checkout directory last, after merging.
 
 Done, each with a section below: search, ICS import, WebCal/ICS
 subscriptions, recurring-event UI (interval / `BYDAY` picker / end
@@ -38,7 +59,8 @@ delete, read-only calendars, ICS export, calendar sharing (create / accept
 / unsubscribe / owner-side management), SQLite read-cache, calendar sort,
 undo toast, agenda / year / mini-month navigator, duplicate event /
 copy-paste, print view, 12h/24h time format setting, view options /
-new-event defaults, dark mode, auto-refresh.
+new-event defaults, dark mode, auto-refresh, CardDAV contacts (see "CardDAV
+contacts" below).
 
 ## Toolchain pins
 
@@ -805,14 +827,14 @@ split out.
   `node_modules`, each workspace's `package.json` + `dist`, and
   `client/dist`.
 - Depends on the npm-workspaces symlink layout:
-  `node_modules/@yourcal/{shared,server,client}` are relative symlinks, so
+  `node_modules/@yourdav/{shared,server,client}` are relative symlinks, so
   copying `node_modules` verbatim + recreating each `package.json`+`dist`
   at the same relative path makes them resolve without carrying `src/`.
   `client/package.json` is deliberately not copied (nothing `require()`s
-  `@yourcal/client` — it's served as static files).
+  `@yourdav/client` — it's served as static files).
 - `docker-compose.yml` wires `SESSION_SECRET` (required, no default —
   `openssl rand -hex 32`, decoded as raw 32-byte key material),
-  `ALLOWED_CALDAV_HOSTS`, `CACHE_ENABLED`/`CACHE_SYNC_TTL_MS`, and a named
+  `ALLOWED_DAV_HOSTS`, `CACHE_ENABLED`/`CACHE_SYNC_TTL_MS`, and a named
   volume at `/app/data`. `.env.example` mirrors these.
 - **Gotcha, not fixed:** the Dockerfile sets `NODE_ENV=production`, which
   makes `session.ts` mark the cookie `Secure` — a browser won't send it
@@ -832,11 +854,149 @@ git tag (`v0.4.0`) for tag builds and `dev` for `main`/dispatch builds.
 Unset (local `npm run dev`) also means `dev`. There's no `.git` in the
 image (`.dockerignore`), so it can't be derived from `git describe` there.
 
+## CardDAV contacts
+
+Merged in from the separate YourContacts project. The shell (app switcher,
+`/contacts` route, master-detail layout, address-book sidebar, per-book client
+cache) came from PR #68 by BladeWDR; the data layer is YourContacts' and
+replaced that PR's ical.js-based one. Verified end-to-end with curl against a
+real Radicale 3.x and Baikal 0.11.1 (see "Baikal" below); the UI is not
+browser-tested.
+
+- **One session, two protocols.** `createClient(ctx, 'caldav' | 'carddav')` in
+  `server/src/dav/client.ts` keeps one cached tsdav client per account *and*
+  account type (the type is part of the cache key — without it the two would
+  collide); `evictClient` clears both. Contacts always use `'carddav'`.
+- **`SessionInfo.hasContacts`** is set at login and on whoami from
+  `supportsContacts()` (`dav/discovery.ts`), a CardDAV discovery probe that
+  never throws and is cached per account for ten minutes. When false the
+  switcher omits the Contacts tab and the router bounces `/contacts`.
+- **API** (`server/src/routes/addressbooks.ts`, mounted at `/api/addressbooks`):
+  `GET /` and `POST /` (create), `DELETE /:id`, `GET|POST|PUT|DELETE
+  /:id/contacts`, `POST /:id/contacts/transfer` (move/copy to another book),
+  `GET /:id/photo`, `GET /:id/export`, `POST /:id/import`,
+  `POST /:id/groups/rename`, `POST /:id/groups/members` (add/remove one group
+  on many contacts). `AddressBook.url` is the collection's CardDAV URL. Writes check the address book is discovered and
+  not read-only (`writable()`); address-book delete is refused (404) for any id
+  that is not a discovered address book.
+- **Store** (`store/DavContactStore.ts`, no SQLite cache — contacts always go
+  straight to the server): `readOnly` comes from the WebDAV ACL via
+  `isCollectionReadOnly`, shared with calendars. Every card href must sit inside
+  its address book's path (`hrefInBook`, segment-boundary check) and
+  throws `ForbiddenError` (-> 403) otherwise. Updates re-fetch the server's card
+  and send `If-Match`; a stale etag is a 412.
+
+### Verified against Baikal 0.11.1
+
+Driven through the app's API with curl, once under Basic and once under
+Digest (`dav_auth_type`): login and CardDAV discovery (`/dav.php/`, default
+book `Default Address Book`), ACL-derived `readOnly: false`, contact create
+with photo, list, photo endpoint (`image/png`, `nosniff`), no-op edit of an
+Apple-style card (ORG, TYPE params, X-*/IMPP/PRODID kept), stale etag -> 412,
+`.vcf` export and re-import (UID dedupe, content-hash UID for UID-less cards),
+group rename, address-book create (extended `MKCOL`) and delete, delete of an
+undiscovered id -> 404, card href outside the book -> 403.
+
+Not covered on Baikal: a read-only address book (Baikal does not share address
+books, so none exists to test) and write conflicts from a second client.
+Changing `dav_auth_type` under a live session makes the stored auth method
+stale: the server rejects it and the app ends the session with a 401, which is
+the intended behaviour.
+
+### vCard handling (important)
+
+- `server/src/vcard/` is a hand-written line parser, **not** ical.js. PR #68's
+  ical.js version was tested and rewrote untouched data on every edit:
+  `BDAY;VALUE=date:1990-05-17` became `BDAY;VALUE=DATE:19900517`, `GEO:geo:1,2`
+  became `geo:1\,2` (corrupting the URI), `TYPE=CELL,VOICE` became one quoted
+  `TYPE="CELL, VOICE"`, `PREF=`/`VALUE=` parameters were dropped, and an Apple
+  `item1.X-ABLabel` was orphaned from its `item1.EMAIL`.
+- Edits regenerate only the managed properties (FN, N, NICKNAME, ORG, TITLE,
+  EMAIL, TEL, URL, ADR, BDAY, ANNIVERSARY, NOTE, CATEGORIES, PHOTO); every other
+  line (X-*, PRODID, IMPP, KIND, GEO, ...) is kept byte-for-byte. VERSION is
+  retained (3.0 or 4.0); new cards are 3.0. `REV` is refreshed.
+- ORG is structured (company;department) but edited as one flat string, so the
+  stored ORG line is kept verbatim unless its text changes.
+- Apple-style groups (`item1.EMAIL` + `item1.X-ABLabel`) are removed together
+  when the managed property is regenerated, so a custom label ("Work2") is
+  dropped with it rather than left orphaned. Known loss.
+- The editor's "display name" field only holds a value when the stored FN differs
+  from the one generated from the name parts, so a custom FN ("Mom") survives an
+  edit and clearing the field regenerates it.
+- Birthdays/anniversaries are plain text (`1990-01-31` or `--01-31` with no
+  year) because a date picker would silently clear year-less dates.
+- `Contact.href` / `Contact.id` are opaque locators the client echoes back.
+  Import dedupes by UID; cards with no UID get a content-hash UID so
+  re-importing is idempotent.
+
+### Moving, copying, batch edits and merging
+
+- **Transfer** (`/:id/contacts/transfer`): a copy gets a new UID so the two
+  cards stay distinct, a move keeps it. A move is create-then-delete and
+  removes the new card again if deleting the original fails, so a contact is
+  never left in both books. Copying out of a read-only book is allowed; moving
+  out of one is not.
+- **Group membership** (`/:id/groups/members`, `editCategories()` in
+  `vcard/card.ts`) edits only the CATEGORIES line(s), like group rename, so a
+  batch "add to group" doesn't renormalise every card the way a full update
+  would. Capped at 200 contacts per request; the client chunks.
+- **Merge** is client-composed: `MergeDialog.vue` builds a `ContactInput` from
+  the user's choices and the store updates the kept card (so its UID, href and
+  unmanaged properties survive) then deletes the other. Shared phone/email/URL/
+  address entries are folded by a normalised key. Unmanaged properties of the
+  *deleted* card are not carried over (the dialog says so). A photo taken from
+  the other card is fetched and re-encoded client-side.
+
+### Client
+
+- `stores/contacts.ts` keeps contacts per address book with a 30s freshness
+  window and stale-while-revalidate, remembers the active book in
+  `localStorage` (`yourdav:active-address-book`, cleared on logout). The active
+  book is an address-book id or `ALL_BOOKS` (`'all'`), the combined view, which
+  is the default when there are two or more books. A remembered book that no
+  longer exists falls back to the combined view (or the only book).
+  Search, group filter and sort are client-side. The store also holds the
+  checked set for batch actions and the move/copy/merge/batch operations.
+- **Popovers and pointer events.** Menus (`BookMenu`, `GroupMenu`) are
+  teleported to `<body>` and `position: fixed` via `lib/popover.ts`, so the
+  list pane's overflow can't clip them. When hiding something with
+  `opacity: 0`, also set `pointer-events: none`: a transparent element still
+  catches clicks, and one with opacity < 1 paints above plain siblings. This
+  broke group rename once (the faded-out count sat on top of the rename button).
+- `views/ContactsView.vue` (editor and detail inline), `components/ContactAvatar.vue`
+  (photo or initials; the parent supplies size/colour via `class`),
+  `lib/labels.ts` (type labels, date formatting, photo downscale).
+- The address format preference (US / international) lives in the existing
+  localStorage-backed `stores/settings.ts` and Settings dialog like every other
+  preference — YourContacts' server-side per-account settings were not carried
+  over.
+
+## Browser testing (headless Chromium, no root needed)
+
+There is no browser on the dev host, but Playwright's headless shell works if
+its system libraries are unpacked privately (all outside the repo):
+
+```
+mkdir pw && cd pw && npm init -y && npm i playwright-core
+npx playwright-core install chromium          # ~120 MB into ~/.cache/ms-playwright
+mkdir debs syslibs && cd debs
+apt-get download libnspr4 libnss3 libatk1.0-0t64 libatk-bridge2.0-0t64 libasound2t64 libatspi2.0-0t64
+for d in *.deb; do dpkg -x $d ../syslibs; done
+export LD_LIBRARY_PATH=$PWD/../syslibs/usr/lib/x86_64-linux-gnu
+```
+
+If `apt-get download` 404s on a package (stale index), fetch the current `.deb`
+from `archive.ubuntu.com/ubuntu/pool/...` directly. Run the app on a spare port
+against the local Baikal, log in through the real login form, and drive it with
+real `mouse.down()/up()` pauses: a bare `click()` is fast enough to hide
+hover/transition bugs. Verify effects against the raw cards on the DAV server
+rather than only the UI. Seed with throwaway contacts and restore them after.
+
 ## Security hardening
 
 From an external review of the code:
 
-- **Login host policy is deliberately open.** With `ALLOWED_CALDAV_HOSTS`
+- **Login host policy is deliberately open.** With `ALLOWED_DAV_HOSTS`
   unset, `POST /api/session` will connect to any `serverUrl` (blind SSRF:
   it only ever answers 401/403/201). Not changed on purpose -- this is a
   generic CalDAV frontend and LAN servers are the main use case, so the

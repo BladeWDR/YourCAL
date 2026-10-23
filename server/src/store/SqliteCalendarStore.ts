@@ -6,7 +6,7 @@ import type {
   TimeRange,
   UnsubscribeResult,
   UpdateCalendarInput,
-} from '@yourcal/shared'
+} from '@yourdav/shared'
 import type Database from 'better-sqlite3'
 import type { DavContext } from '../dav/context.js'
 import { computeObjectBounds } from '../ical/bounds.js'

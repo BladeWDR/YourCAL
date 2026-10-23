@@ -19,10 +19,10 @@ export const config = {
   // SESSION_TTL_DAYS is expressed in days (not seconds) for readability;
   // converted here to the seconds the session/cookie logic below expects.
   sessionTtlSeconds: Number(process.env.SESSION_TTL_DAYS ?? 1) * 86400,
-  allowedCalDavHosts: process.env.ALLOWED_CALDAV_HOSTS
-    ? process.env.ALLOWED_CALDAV_HOSTS.split(',').map((h) => h.trim())
+  allowedDavHosts: process.env.ALLOWED_DAV_HOSTS
+    ? process.env.ALLOWED_DAV_HOSTS.split(',').map((h) => h.trim())
     : null,
-  // Upper bound, in ms, on any single outbound request (CalDAV or
+  // Upper bound, in ms, on any single outbound request (DAV or
   // subscription feed) -- without it a server that accepts the connection
   // and then stalls would hold the request open forever.
   outboundTimeoutMs: Number(process.env.OUTBOUND_TIMEOUT_MS ?? 30000),

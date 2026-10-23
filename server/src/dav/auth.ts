@@ -5,7 +5,7 @@ import { withTimeout } from './timeout.js'
 export type AuthMethod = 'Basic' | 'Digest'
 
 /**
- * The CalDAV server answered an authenticated request with 401: the stored
+ * The DAV server answered an authenticated request with 401: the stored
  * credentials no longer work (password changed, account disabled, auth
  * scheme switched). Thrown from davFetch so every caller -- tsdav and the
  * raw sharing/PROPPATCH fetches alike -- fails the same way, and the error
@@ -13,7 +13,7 @@ export type AuthMethod = 'Basic' | 'Digest'
  */
 export class DavAuthError extends Error {
   constructor() {
-    super('The CalDAV server rejected the stored credentials')
+    super('The DAV server rejected the stored credentials')
     this.name = 'DavAuthError'
   }
 }
@@ -108,8 +108,8 @@ export function buildDigestHeader(
  *
  * Tries `baseUrl` as given, then -- for setups that 404/405 a PROPFIND on
  * the bare origin but publish the real endpoint via a redirect (Baikal
- * behind nginx does exactly this) -- whatever `/.well-known/caldav` points
- * at.
+ * behind nginx does exactly this) -- whatever `/.well-known/caldav` (or
+ * `/.well-known/carddav`) points at.
  *
  * The caller is responsible for host-allowlisting `baseUrl` first (the
  * login route does, via `assertHostAllowed`, before calling this).
@@ -135,14 +135,19 @@ export async function detectAuthMethod(baseUrl: string): Promise<AuthMethod> {
   }
 
   const candidates = [baseUrl]
-  try {
-    const wk = await probe(new URL('/.well-known/caldav', baseUrl).href)
-    if (wk.status === 401) return fromChallenge(wk.wa)
-    if (wk.status >= 300 && wk.status < 400 && wk.location) {
-      candidates.push(new URL(wk.location, baseUrl).href)
+  // CalDAV first (the login protocol), then CardDAV for servers that only
+  // publish one of the two well-known paths.
+  for (const service of ['caldav', 'carddav']) {
+    try {
+      const wk = await probe(new URL(`/.well-known/${service}`, baseUrl).href)
+      if (wk.status === 401) return fromChallenge(wk.wa)
+      if (wk.status >= 300 && wk.status < 400 && wk.location) {
+        candidates.push(new URL(wk.location, baseUrl).href)
+        break
+      }
+    } catch {
+      // ignore -- try the next well-known path, then the candidate list
     }
-  } catch {
-    // ignore -- fall through to probing the candidate list
   }
 
   for (const url of candidates) {
@@ -225,7 +230,7 @@ export function clearDigestChallengeCache(): void {
 const BODY_OPTIONAL_METHODS = new Set(['PROPFIND', 'OPTIONS', 'GET', 'HEAD'])
 
 /**
- * Drop-in replacement for `fetch()` on every authenticated CalDAV request
+ * Drop-in replacement for `fetch()` on every authenticated DAV request
  * (used directly by the raw sharing/PROPPATCH calls and wired in as tsdav's
  * `fetch` override). Basic just attaches the header; Digest reuses the
  * cached challenge for this credentials + origin when there is one, and

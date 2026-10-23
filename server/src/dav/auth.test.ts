@@ -108,6 +108,17 @@ describe('detectAuthMethod', () => {
     })
     expect(await detectAuthMethod('http://192.168.50.20:8120')).toBe('Digest')
   })
+
+  it('falls back to /.well-known/carddav when caldav is not published', async () => {
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = input instanceof Request ? input.url : String(input)
+      if (url.endsWith('/.well-known/carddav')) {
+        return new Response('', { status: 401, headers: { 'www-authenticate': 'Digest realm="x", nonce="n"' } })
+      }
+      return new Response('', { status: 404 })
+    })
+    expect(await detectAuthMethod('https://dav.example.com')).toBe('Digest')
+  })
 })
 
 describe('davFetch', () => {

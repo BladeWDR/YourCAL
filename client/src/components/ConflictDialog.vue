@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { CalendarObject } from '@yourcal/shared'
+import type { CalendarObject } from '@yourdav/shared'
 import { DateTime } from 'luxon'
 
 const props = defineProps<{

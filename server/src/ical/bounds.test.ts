@@ -1,4 +1,4 @@
-import type { EventFields } from '@yourcal/shared'
+import type { EventFields } from '@yourdav/shared'
 import { describe, expect, it } from 'vitest'
 import { computeObjectBounds } from './bounds.js'
 import { calendarObjectToIcs } from './mapper.js'

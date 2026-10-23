@@ -7,9 +7,11 @@ import { DavAuthError } from './dav/auth.js'
 import { evictClient } from './dav/client.js'
 import { DisallowedHostError } from './dav/hostAllowlist.js'
 import { originCheck } from './originCheck.js'
+import { ForbiddenError } from './store/errors.js'
 import { redactLogUrl } from './logRedaction.js'
 import { registerSession } from './session.js'
 import { sessionRoutes } from './routes/session.js'
+import { addressBookRoutes } from './routes/addressbooks.js'
 import { calendarRoutes } from './routes/calendars.js'
 import { searchRoutes } from './routes/search.js'
 import { sharingRoutes } from './routes/sharing.js'
@@ -44,11 +46,11 @@ async function main(): Promise<void> {
   })
 
   // A calendarId/href resolving to a different host than the authenticated
-  // CalDAV server is a rejected SSRF attempt, not a server bug -- surface it
+  // DAV server is a rejected SSRF attempt, not a server bug -- surface it
   // as 403, not the default 500 an uncaught throw would otherwise produce.
   app.setErrorHandler((err, req, reply) => {
     if (err instanceof DavAuthError) {
-      // The stored CalDAV credentials stopped working mid-session. End the
+      // The stored DAV credentials stopped working mid-session. End the
       // app session too (otherwise a reload's whoami would still pass and
       // land back here), and answer 401 so the client's session-expired
       // handling sends the user to /login.
@@ -56,6 +58,10 @@ async function main(): Promise<void> {
       if (dav) evictClient(dav)
       req.session?.delete()
       reply.code(401).send({ error: 'dav_auth_failed', message: err.message })
+      return
+    }
+    if (err instanceof ForbiddenError) {
+      reply.code(403).send({ error: 'forbidden', message: err.message })
       return
     }
     if (err instanceof DisallowedHostError) {
@@ -82,12 +88,22 @@ async function main(): Promise<void> {
 
   app.addHook('onRequest', originCheck)
 
+  // .vcf imports arrive as plain text bodies.
+  app.addContentTypeParser(
+    ['text/vcard', 'text/x-vcard', 'text/plain'],
+    { parseAs: 'string', bodyLimit: 20 * 1024 * 1024 },
+    (_req, body, done) => {
+      done(null, body)
+    },
+  )
+
   await registerSession(app)
   await app.register(sessionRoutes, { prefix: '/api/session' })
   await app.register(calendarRoutes, { prefix: '/api/calendars' })
   await app.register(searchRoutes, { prefix: '/api/search' })
   await app.register(sharingRoutes, { prefix: '/api/sharing' })
   await app.register(subscriptionRoutes, { prefix: '/api/subscriptions' })
+  await app.register(addressBookRoutes, { prefix: '/api/addressbooks' })
 
   const clientDist = path.join(__dirname, '../../client/dist')
   await app.register(fastifyStatic, { root: clientDist })

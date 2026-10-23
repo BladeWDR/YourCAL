@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { PendingShare } from '@yourcal/shared'
+import type { PendingShare } from '@yourdav/shared'
 import { onMounted, ref } from 'vue'
 import { api, ApiRequestError } from '../api.js'
 import { useCalendarsStore } from '../stores/calendars.js'

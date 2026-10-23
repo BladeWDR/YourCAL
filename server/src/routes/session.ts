@@ -1,10 +1,10 @@
-import type { LoginRequest, SessionInfo } from '@yourcal/shared'
+import type { LoginRequest, SessionInfo } from '@yourdav/shared'
 import rateLimit from '@fastify/rate-limit'
 import type { FastifyInstance } from 'fastify'
 import { config } from '../config.js'
 import { detectAuthMethod } from '../dav/auth.js'
 import { evictClient } from '../dav/client.js'
-import { verifyCredentials } from '../dav/discovery.js'
+import { supportsContacts, verifyCredentials } from '../dav/discovery.js'
 import { assertHostAllowed, DisallowedHostError } from '../dav/hostAllowlist.js'
 
 // Each login attempt makes the server do outbound requests (auth probe,
@@ -41,17 +41,23 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
         if (err instanceof DisallowedHostError) {
           return reply.code(403).send({ error: 'host_not_allowed', message: err.message })
         }
-        req.log.info({ err }, 'CalDAV login failed')
+        req.log.info({ err }, 'DAV login failed')
         return reply
           .code(401)
-          .send({ error: 'invalid_credentials', message: 'Could not authenticate with the CalDAV server' })
+          .send({ error: 'invalid_credentials', message: 'Could not authenticate with the DAV server' })
       } finally {
         activeLogins--
       }
 
       req.session.set('dav', { baseUrl: serverUrl, username, password, authMethod })
 
-      const info: SessionInfo = { serverUrl, username, defaultTimezone: config.defaultTimezone, version: config.version }
+      const info: SessionInfo = {
+        serverUrl,
+        username,
+        defaultTimezone: config.defaultTimezone,
+        version: config.version,
+        hasContacts: await supportsContacts({ baseUrl: serverUrl, username, password, authMethod }),
+      }
       return reply.code(201).send(info)
     },
   )
@@ -61,7 +67,13 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
     if (!dav) {
       return reply.code(401).send({ error: 'not_authenticated', message: 'No active session' })
     }
-    const info: SessionInfo = { serverUrl: dav.baseUrl, username: dav.username, defaultTimezone: config.defaultTimezone, version: config.version }
+    const info: SessionInfo = {
+      serverUrl: dav.baseUrl,
+      username: dav.username,
+      defaultTimezone: config.defaultTimezone,
+      version: config.version,
+      hasContacts: await supportsContacts(dav),
+    }
     return reply.send(info)
   })
 

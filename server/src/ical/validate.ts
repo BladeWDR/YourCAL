@@ -1,4 +1,4 @@
-import type { EventFields } from '@yourcal/shared'
+import type { EventFields } from '@yourdav/shared'
 
 /**
  * Validates a start/end query-param pair before it reaches `new Date()` and,

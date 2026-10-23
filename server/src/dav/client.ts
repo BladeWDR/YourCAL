@@ -33,14 +33,14 @@ setInterval(
   CLIENT_TTL_MS,
 ).unref()
 
-function cacheKey(ctx: DavContext): string {
+function cacheKey(ctx: DavContext, accountType: 'caldav' | 'carddav' = 'caldav'): string {
   return createHash('sha256')
-    .update(`${ctx.baseUrl}\n${ctx.username}\n${ctx.password}\n${ctx.authMethod ?? 'Basic'}`)
+    .update(`${ctx.baseUrl}\n${ctx.username}\n${ctx.password}\n${ctx.authMethod ?? 'Basic'}\n${accountType}`)
     .digest('hex')
 }
 
-export async function createClient(ctx: DavContext): Promise<DAVClient> {
-  const key = cacheKey(ctx)
+export async function createClient(ctx: DavContext, accountType: 'caldav' | 'carddav' = 'caldav'): Promise<DAVClient> {
+  const key = cacheKey(ctx, accountType)
   const cached = cache.get(key)
   if (cached && cached.expiresAt > Date.now()) {
     return cached.client
@@ -63,7 +63,7 @@ export async function createClient(ctx: DavContext): Promise<DAVClient> {
     // davFetch's and doubles failed attempts against the server.
     authMethod: 'Custom',
     authFunction: async () => ({}),
-    defaultAccountType: 'caldav',
+    defaultAccountType: accountType,
     fetch: async (input: string | URL | Request, init?: RequestInit) => {
       try {
         return await davFetch(ctx, input, init)
@@ -85,5 +85,6 @@ export async function createClient(ctx: DavContext): Promise<DAVClient> {
 }
 
 export function evictClient(ctx: DavContext): void {
-  cache.delete(cacheKey(ctx))
+  cache.delete(cacheKey(ctx, 'caldav'))
+  cache.delete(cacheKey(ctx, 'carddav'))
 }

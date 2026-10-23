@@ -1,4 +1,4 @@
-import type { Calendar, UpdateCalendarInput } from '@yourcal/shared'
+import type { Calendar, UpdateCalendarInput } from '@yourdav/shared'
 import { defineStore } from 'pinia'
 import { reactive, ref } from 'vue'
 import { api } from '../api.js'

@@ -116,6 +116,9 @@ export interface SessionInfo {
   // Running release: the git tag (e.g. "v0.4.0") for a tagged image build,
   // or "dev" for anything else (untagged main builds, local runs).
   version: string
+  // Whether the account also has CardDAV address books; the Contacts half of
+  // the app is hidden when it does not.
+  hasContacts: boolean
 }
 
 export interface LoginRequest {
@@ -196,4 +199,139 @@ export interface UnsubscribeResult {
   // that specific share until its `updatedAt` moves past `dismissedAt`
   // (i.e. the owner actually does something new with it).
   dismissedPending: { pathOrToken: string; dismissedAt: number } | null
+}
+
+// --- Contacts (CardDAV) ---
+
+export interface AddressBook {
+  /** Opaque id; the client echoes it back and never parses it. */
+  id: string
+  /** The collection's CardDAV URL, for pointing other clients at it. */
+  url: string
+  displayName: string
+  description: string | null
+  readOnly: boolean
+  ctag: string | null
+}
+
+export interface CreateAddressBookInput {
+  displayName: string
+}
+
+export interface LabeledValue {
+  value: string
+  /** Lowercased vCard TYPE tokens, e.g. ['home'], ['work', 'voice'], ['cell']. */
+  types: string[]
+  pref: boolean
+}
+
+export interface PostalAddress {
+  types: string[]
+  poBox: string
+  extended: string
+  street: string
+  locality: string
+  region: string
+  postalCode: string
+  country: string
+}
+
+export interface StructuredName {
+  family: string
+  given: string
+  additional: string
+  prefix: string
+  suffix: string
+}
+
+export interface Contact {
+  /** Opaque id; the client echoes it back and never parses it. */
+  id: string
+  addressBookId: string
+  /** Opaque locator of the .vcf resource; echoed back on write. */
+  href: string
+  etag: string
+  uid: string
+  version: '3.0' | '4.0'
+  fullName: string
+  name: StructuredName
+  nickname: string
+  org: string
+  title: string
+  emails: LabeledValue[]
+  phones: LabeledValue[]
+  urls: LabeledValue[]
+  addresses: PostalAddress[]
+  /** YYYY-MM-DD, or --MM-DD when the year is unknown. Empty when unset. */
+  birthday: string
+  anniversary: string
+  notes: string
+  categories: string[]
+  hasPhoto: boolean
+}
+
+/** Editable subset of a Contact; everything else on the card is preserved server-side. */
+export interface ContactInput {
+  name: StructuredName
+  fullName?: string
+  nickname: string
+  org: string
+  title: string
+  emails: LabeledValue[]
+  phones: LabeledValue[]
+  urls: LabeledValue[]
+  addresses: PostalAddress[]
+  birthday: string
+  anniversary: string
+  notes: string
+  categories: string[]
+  /** data: URI to set the photo, null to remove it, omitted to leave it alone. */
+  photo?: string | null
+}
+
+export interface UpdateContactInput extends ContactInput {
+  href: string
+  etag: string
+}
+
+export interface DeleteContactInput {
+  href: string
+  etag: string
+}
+
+export interface ImportResult {
+  imported: number
+  skipped: number
+}
+
+export interface RenameGroupInput {
+  from: string
+  to: string
+}
+
+export interface RenameGroupResult {
+  updated: number
+  failed: number
+}
+
+export interface TransferContactInput {
+  href: string
+  etag: string
+  targetBookId: string
+  /** 'move' deletes the original; 'copy' leaves it and gives the copy a new UID. */
+  mode: 'move' | 'copy'
+}
+
+export interface GroupMembersInput {
+  items: { href: string; etag: string }[]
+  /** Exactly one of add / remove. */
+  add?: string
+  remove?: string
+}
+
+export interface GroupMembersResult {
+  updated: number
+  /** Cards that were already in (or not in) the group. */
+  unchanged: number
+  failed: number
 }

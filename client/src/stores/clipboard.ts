@@ -1,4 +1,4 @@
-import type { CalendarObject } from '@yourcal/shared'
+import type { CalendarObject } from '@yourdav/shared'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 

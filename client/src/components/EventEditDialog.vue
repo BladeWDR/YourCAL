@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { AlarmFields, Calendar, CalendarObject, EventFields } from '@yourcal/shared'
+import type { AlarmFields, Calendar, CalendarObject, EventFields } from '@yourdav/shared'
 import { DateTime } from 'luxon'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { REMINDER_PRESETS } from '../lib/reminders.js'

@@ -65,11 +65,11 @@ async function onSubmit(): Promise<void> {
         </svg>
       </div>
       <h1>Sign in</h1>
-      <p class="login__hint">Connect with your CalDAV server address and account credentials.</p>
+      <p class="login__hint">Connect with your CalDAV/CardDAV server address and account credentials.</p>
 
       <label>
         <span>Server URL</span>
-        <input v-model="serverUrl" type="text" placeholder="caldav.example.com (https:// assumed)" required />
+        <input v-model="serverUrl" type="text" placeholder="dav.example.com (https:// assumed)" required />
       </label>
 
       <label>

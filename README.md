@@ -1,9 +1,15 @@
-# YourCal
+# YourDAV
 
-A self-hosted web calendar client for CalDAV servers (tested against
-[Radicale](https://radicale.org/) and [Baikal](https://sabre.io/baikal/)).
-Your CalDAV server is the sole identity provider — there's no separate
-local user store or account system.
+A self-hosted web calendar and contacts client for CalDAV/CardDAV servers
+(tested against [Radicale](https://radicale.org/) and
+[Baikal](https://sabre.io/baikal/)). Your DAV server is the sole identity
+provider — there's no separate local user store or account system. Switch
+between Calendar and Contacts from the top of the sidebar; if your server
+has no address books, the Contacts tab is hidden.
+
+YourDAV is the merger of the former YourCal and YourContacts projects. See
+[Upgrading from YourCal](#upgrading-from-yourcal) if you're coming from an
+earlier release.
 
 ## Features
 
@@ -18,6 +24,15 @@ local user store or account system.
 - WebCal/ICS URL subscriptions (read-only)
 - Calendar sharing between users on the same CalDAV server (Radicale
   sharing API and Baikal `cs:share`, with an in-app accept flow)
+- Contacts (CardDAV): multiple address books (create and delete) with a
+  combined "All address books" view, groups, photos, typed
+  phones/emails/websites/addresses, `.vcf` import and export, read-only
+  address books, move/copy between address books, multi-select with batch
+  delete and group changes, merging two duplicates, and each address book's
+  CardDAV URL for setting up other apps. Edits only touch the fields the editor manages —
+  everything else on the card (custom `X-` properties, instant-message
+  handles, etc.) is preserved byte-for-byte. Contacts have been verified against
+  Radicale and Baikal (Basic and Digest auth).
 
 See [AGENTS.md](./AGENTS.md) for implementation details, known gaps, and
 open items.
@@ -43,12 +58,31 @@ open items.
   </tr>
 </table>
 
+<table>
+  <tr>
+    <td><img src="screenshots/06-contacts.png" alt="Contacts"></td>
+    <td><img src="screenshots/07-contacts-edit.png" alt="Editing a contact"></td>
+  </tr>
+  <tr>
+    <td align="center">Contacts</td>
+    <td align="center">Editing a contact</td>
+  </tr>
+  <tr>
+    <td><img src="screenshots/08-contacts-batch.png" alt="Batch actions and move/copy"></td>
+    <td><img src="screenshots/09-contacts-merge.png" alt="Merging two duplicate contacts"></td>
+  </tr>
+  <tr>
+    <td align="center">Select several: move, copy, group, delete</td>
+    <td align="center">Merge duplicates</td>
+  </tr>
+</table>
+
 ## Stack
 
 npm workspaces monorepo:
 
 - `shared` — TypeScript types shared between client and server
-- `server` — Fastify API, talks to your CalDAV server via `tsdav`
+- `server` — Fastify API, talks to your CalDAV/CardDAV server via `tsdav`
 - `client` — Vue 3 SPA (FullCalendar for the calendar grid)
 
 ## Running with Docker
@@ -71,9 +105,9 @@ docker compose up -d --build
 ### Without a checkout (pulls the published image)
 
 Every push to `main` publishes an image to
-`ghcr.io/fuzzymistborn/yourcal:latest` (see
+`ghcr.io/fuzzymistborn/yourdav:latest` (see
 `.github/workflows/docker-publish.yml`; tagged releases also get
-`vX.Y.Z`/`vX.Y` tags). If you just want to run YourCal without cloning the
+`vX.Y.Z`/`vX.Y` tags). If you just want to run YourDAV without cloning the
 repo, grab `docker-compose.example.yml`, rename it to `docker-compose.yml`,
 create a `.env` next to it with at least `SESSION_SECRET` set (see
 `.env.example` above for the full list of variables), then:
@@ -85,10 +119,10 @@ docker compose up -d
 ### Either way
 
 The app listens on `http://localhost:3000`. Log in with credentials for
-any CalDAV server reachable from the container (set `ALLOWED_CALDAV_HOSTS`
+any CalDAV/CardDAV server reachable from the container (set `ALLOWED_DAV_HOSTS`
 to restrict which hosts it's allowed to connect to).
 
-> **Security note:** with `ALLOWED_CALDAV_HOSTS` unset, anyone who can reach
+> **Security note:** with `ALLOWED_DAV_HOSTS` unset, anyone who can reach
 > the login page can make the server send requests to any host it can reach
 > (including your internal network). That's fine on a trusted LAN; if the
 > app is exposed to the internet, set the allowlist. Behind a reverse proxy,
@@ -107,7 +141,7 @@ trusted LAN, uncomment `NODE_ENV: development` in `docker-compose.yml` and
 
 ## Running locally for development
 
-Requires Node.js and a running CalDAV server to point at.
+Requires Node.js and a running CalDAV/CardDAV server to point at.
 
 ```sh
 npm install
@@ -128,8 +162,29 @@ npm run lint    # eslint across the workspace
 ## Configuration
 
 All server configuration is via environment variables — see
-[.env.example](./.env.example) for the full list (session secret, CalDAV
+[.env.example](./.env.example) for the full list (session secret, DAV
 host allowlist, session TTL, optional SQLite read-cache).
+
+## Upgrading from YourCal
+
+The first YourDAV release renames the project and is **a breaking change**.
+Nothing is lost server-side — your calendars and contacts live on your DAV
+server — but your deployment needs these edits:
+
+- **Image:** `ghcr.io/fuzzymistborn/yourcal` stops receiving updates. Switch
+  to `ghcr.io/fuzzymistborn/yourdav`.
+- **Compose service and volume:** `yourcal` / `yourcal-data` are now
+  `yourdav` / `yourdav-data`. The volume only holds the optional SQLite
+  read-cache (`CACHE_ENABLED`), which is rebuilt automatically, so you can
+  start with a fresh volume. To keep it anyway:
+  `docker run --rm -v yourcal-data:/from -v yourdav-data:/to alpine cp -a /from/. /to/`.
+- **Environment:** `ALLOWED_CALDAV_HOSTS` is now `ALLOWED_DAV_HOSTS` (it
+  covers CardDAV too). The old name is **not** read, so with only the old
+  name set the allowlist silently turns off — rename it before upgrading.
+- **Coming from YourContacts:** that project's separate image is replaced by
+  this one. Per-account settings (theme, address format) were stored on the
+  server there and are now browser-local like the calendar's; set them once in
+  Settings. `ALLOWED_CARDDAV_HOSTS` is now `ALLOWED_DAV_HOSTS`.
 
 ## Troubleshooting
 

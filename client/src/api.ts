@@ -1,21 +1,31 @@
 import type {
+  AddressBook,
   ApiError,
   Calendar,
   CalendarObject,
+  Contact,
+  CreateAddressBookInput,
   CreateCalendarInput,
+  ContactInput,
   CreateEventInput,
   DeleteEventInput,
+  GroupMembersInput,
+  GroupMembersResult,
+  ImportResult,
   LoginRequest,
   OwnedShare,
   PendingShare,
+  RenameGroupResult,
   SessionInfo,
   ShareCalendarInput,
   ShareCalendarResult,
   SharePermission,
+  TransferContactInput,
   UnsubscribeResult,
   UpdateCalendarInput,
+  UpdateContactInput,
   UpdateEventInput,
-} from '@yourcal/shared'
+} from '@yourdav/shared'
 
 export class ApiRequestError extends Error {
   constructor(
@@ -34,7 +44,7 @@ export class ApiRequestError extends Error {
 // generic error and no indication the user needs to sign in again.
 // main.ts/App.vue owns the actual redirect so this module doesn't need to
 // import the router.
-export const SESSION_EXPIRED_EVENT = 'yourcal:session-expired'
+export const SESSION_EXPIRED_EVENT = 'yourdav:session-expired'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // Normalised through Headers rather than object-spread, which silently
@@ -150,4 +160,38 @@ export const api = {
     request<CalendarObject[]>(
       `/subscriptions/events?url=${encodeURIComponent(url)}&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`,
     ),
+
+  // Address books & contacts
+  getAddressBooks: () => request<AddressBook[]>('/addressbooks'),
+  createAddressBook: (input: CreateAddressBookInput) =>
+    request<AddressBook>('/addressbooks', { method: 'POST', body: JSON.stringify(input) }),
+  deleteAddressBook: (bookId: string) => request<void>(`/addressbooks/${bookId}`, { method: 'DELETE' }),
+  getContacts: (bookId: string) => request<Contact[]>(`/addressbooks/${bookId}/contacts`),
+  createContact: (bookId: string, body: ContactInput) =>
+    request<Contact>(`/addressbooks/${bookId}/contacts`, { method: 'POST', body: JSON.stringify(body) }),
+  updateContact: (bookId: string, body: UpdateContactInput) =>
+    request<Contact>(`/addressbooks/${bookId}/contacts`, { method: 'PUT', body: JSON.stringify(body) }),
+  deleteContact: (bookId: string, href: string, etag: string) =>
+    request<void>(`/addressbooks/${bookId}/contacts?href=${encodeURIComponent(href)}&etag=${encodeURIComponent(etag)}`, {
+      method: 'DELETE',
+    }),
+  transferContact: (bookId: string, body: TransferContactInput) =>
+    request<Contact>(`/addressbooks/${bookId}/contacts/transfer`, { method: 'POST', body: JSON.stringify(body) }),
+  setGroupMembers: (bookId: string, body: GroupMembersInput) =>
+    request<GroupMembersResult>(`/addressbooks/${bookId}/groups/members`, { method: 'POST', body: JSON.stringify(body) }),
+  renameGroup: (bookId: string, from: string, to: string) =>
+    request<RenameGroupResult>(`/addressbooks/${bookId}/groups/rename`, {
+      method: 'POST',
+      body: JSON.stringify({ from, to }),
+    }),
+  importVcf: (bookId: string, vcf: string) =>
+    request<ImportResult>(`/addressbooks/${bookId}/import`, {
+      method: 'POST',
+      body: vcf,
+      headers: { 'Content-Type': 'text/vcard' },
+    }),
+  // Plain URLs for <img src> / navigated downloads; the session cookie rides along same-origin.
+  photoUrl: (bookId: string, href: string, etag: string) =>
+    `/api/addressbooks/${bookId}/photo?href=${encodeURIComponent(href)}&v=${encodeURIComponent(etag)}`,
+  exportUrl: (bookId: string) => `/api/addressbooks/${bookId}/export`,
 }

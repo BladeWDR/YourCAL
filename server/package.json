@@ -1,5 +1,5 @@
 {
-  "name": "@yourcal/server",
+  "name": "@yourdav/server",
   "version": "0.0.0",
   "type": "module",
   "scripts": {
@@ -13,7 +13,7 @@
     "@fastify/secure-session": "^8.4.1",
     "@fastify/static": "^10.1.6",
     "@touch4it/ical-timezones": "^1.9.0",
-    "@yourcal/shared": "*",
+    "@yourdav/shared": "*",
     "better-sqlite3": "^13.0.3",
     "fastify": "^5.12.7",
     "ical.js": "^2.1.0",

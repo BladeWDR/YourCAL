@@ -1,6 +1,6 @@
 services:
-  yourcal:
-    image: ghcr.io/fuzzymistborn/yourcal:latest
+  yourdav:
+    image: ghcr.io/fuzzymistborn/yourdav:latest
     ports:
       - "3000:3000"
     environment:
@@ -13,7 +13,7 @@ services:
       # permitted to talk to -- see server/src/dav/hostAllowlist.ts. Unset
       # (the default) allows any host, which is fine for a trusted personal
       # instance but worth locking down if this is reachable more broadly.
-      ALLOWED_CALDAV_HOSTS: ${ALLOWED_CALDAV_HOSTS:-}
+      ALLOWED_DAV_HOSTS: ${ALLOWED_DAV_HOSTS:-}
       # Set to true behind a reverse proxy so login rate limiting uses the
       # real client IP; leave false when exposed directly.
       TRUST_PROXY: ${TRUST_PROXY:-false}
@@ -48,8 +48,8 @@ services:
       # Only load-bearing when CACHE_ENABLED=true -- otherwise DavCalendarStore
       # is used directly with no local state to persist (see AGENTS.md's
       # "SQLite read-cache" section).
-      - yourcal-data:/app/data
+      - yourdav-data:/app/data
     restart: unless-stopped
 
 volumes:
-  yourcal-data:
+  yourdav-data:

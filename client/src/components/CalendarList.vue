@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Calendar } from '@yourcal/shared'
+import type { Calendar } from '@yourdav/shared'
 import { computed, nextTick, ref } from 'vue'
 import { useCalendarsStore } from '../stores/calendars.js'
 import { useSettingsStore } from '../stores/settings.js'

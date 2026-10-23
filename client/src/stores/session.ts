@@ -1,8 +1,9 @@
-import type { SessionInfo } from '@yourcal/shared'
+import type { SessionInfo } from '@yourdav/shared'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { api, ApiRequestError } from '../api.js'
 import { clearAccountStorage } from '../lib/accountStorage.js'
+import { useContactsStore } from './contacts.js'
 import { useNotificationsStore } from './notifications.js'
 
 export const useSessionStore = defineStore('session', () => {
@@ -38,6 +39,7 @@ export const useSessionStore = defineStore('session', () => {
     // next-logged-in user (on a shared browser/session) never opened could
     // still fire after the switch.
     useNotificationsStore().clear()
+    useContactsStore().clear()
   }
 
   return { info, checked, refresh, login, logout, ApiRequestError }
