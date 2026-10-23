@@ -863,8 +863,8 @@ address book created via `MKCOL`).
   - `createAddressBook`: creates address books using raw `MKCOL` with
     `<C:addressbook/>` resourcetype.
   - `deleteAddressBook`: deletes collections via DAV `DELETE`.
-  - `getContacts`: fetches vCards via `client.fetchVCards()`, sorted by
-    `fn.localeCompare`.
+  - `getContacts`: fetches vCards via `client.fetchVCards({ useMultiGet: false })`,
+    sorted by `fn.localeCompare` (single REPORT request for ETags + address-data).
   - `createContact`: generates UUID filename and calls `client.createVCard()`.
   - `updateContact`: fetches existing vCard to preserve unknown fields,
     updates via `client.updateVCard()` with `If-Match` ETag header (maps
@@ -893,6 +893,12 @@ address book created via `MKCOL`).
   - Right pane contains contact details (with clickable `mailto:` and `tel:`
     links) or an edit/create form supporting dynamic email, phone, and
     postal address rows.
+  - Performance & caching: `useContactsStore` maintains a 30s freshness
+    window (`FRESH_MS = 30_000`) matching `useEventsStore`, remembering
+    address books and contacts in memory so switching between views is 0ms
+    instant. Remembers active book ID in `localStorage` to fetch books and
+    contacts in parallel (`Promise.all`), with non-blocking SWR background
+    revalidation.
 
 ## Security hardening
 
