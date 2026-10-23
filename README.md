@@ -24,9 +24,12 @@ earlier release.
 - WebCal/ICS URL subscriptions (read-only)
 - Calendar sharing between users on the same CalDAV server (Radicale
   sharing API and Baikal `cs:share`, with an in-app accept flow)
-- Contacts (CardDAV): multiple address books (create and delete), groups,
-  photos, typed phones/emails/websites/addresses, `.vcf` import and export,
-  read-only address books. Edits only touch the fields the editor manages —
+- Contacts (CardDAV): multiple address books (create and delete) with a
+  combined "All address books" view, groups, photos, typed
+  phones/emails/websites/addresses, `.vcf` import and export, read-only
+  address books, move/copy between address books, multi-select with batch
+  delete and group changes, merging two duplicates, and each address book's
+  CardDAV URL for setting up other apps. Edits only touch the fields the editor manages —
   everything else on the card (custom `X-` properties, instant-message
   handles, etc.) is preserved byte-for-byte. Contacts have been verified against
   Radicale and Baikal (Basic and Digest auth).
