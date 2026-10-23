@@ -1929,6 +1929,25 @@ const contactCountLabel = computed(() => {
   text-decoration: underline;
 }
 
+/* base.css gives inputs a border and colours but no padding or sizing, so the
+   editor's .input/.select/.textarea need their own (.select-sm below tightens
+   the type selects). */
+.input,
+.select {
+  padding: 0.5rem 0.65rem;
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+.input {
+  width: 100%;
+}
+
+.textarea {
+  resize: vertical;
+  line-height: 1.4;
+}
+
 .select-sm {
   padding: 0.35rem 0.5rem;
   font-size: 0.8rem;
