@@ -37,6 +37,15 @@ server's own RRULE/ETag validation, which is still only checked by hand.
   `hasContacts: false` path is unit-tested only).
 - **Contacts: address-book sharing, duplicate merge, and rename** are out of
   scope; create/delete exist.
+- **YourDAV release chores** (the merge of YourCal + YourContacts is on the
+  `yourdav` branch; these are what remains before shipping it):
+  - rename the GitHub repo to `YourDAV` (old URLs redirect; the CI image name
+    follows `github.repository`, so no workflow change is needed);
+  - tag the release as a major/breaking one (latest is `v0.5.1`) and put the
+    README's "Upgrading from YourCal" section in the release notes;
+  - add contacts screenshots to the README (there are none yet);
+  - archive the old `projects/contacts` checkout (YourContacts, not a git repo);
+  - rename the local checkout directory last, after merging.
 
 Done, each with a section below: search, ICS import, WebCal/ICS
 subscriptions, recurring-event UI (interval / `BYDAY` picker / end
