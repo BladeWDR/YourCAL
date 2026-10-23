@@ -310,7 +310,7 @@ const contactCountLabel = computed(() => {
             <span class="contacts-count">{{ contactCountLabel }}</span>
           </div>
 
-          <div v-if="contactsStore.loading" class="pane-state">Loading contacts...</div>
+          <div v-if="contactsStore.loading && contactsStore.contacts.length === 0" class="pane-state">Loading contacts...</div>
           <div v-else-if="contactsStore.filteredContacts.length === 0" class="pane-state">
             <p v-if="contactsStore.searchQuery">No contacts match your search.</p>
             <p v-else>No contacts in this address book.</p>

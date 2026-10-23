@@ -85,6 +85,7 @@ export class DavAddressBookStore {
 
     const vcards = await client.fetchVCards({
       addressBook: { url },
+      useMultiGet: false,
     })
 
     const contacts: Contact[] = []
