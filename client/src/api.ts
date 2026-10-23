@@ -1,8 +1,12 @@
 import type {
+  AddressBook,
   ApiError,
   Calendar,
   CalendarObject,
+  Contact,
+  CreateAddressBookInput,
   CreateCalendarInput,
+  CreateContactInput,
   CreateEventInput,
   DeleteEventInput,
   LoginRequest,
@@ -14,6 +18,7 @@ import type {
   SharePermission,
   UnsubscribeResult,
   UpdateCalendarInput,
+  UpdateContactInput,
   UpdateEventInput,
 } from '@yourcal/shared'
 
@@ -150,4 +155,35 @@ export const api = {
     request<CalendarObject[]>(
       `/subscriptions/events?url=${encodeURIComponent(url)}&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`,
     ),
+
+  // Address books & contacts
+  getAddressBooks: () => request<AddressBook[]>('/addressbooks'),
+  createAddressBook: (input: CreateAddressBookInput) =>
+    request<AddressBook>('/addressbooks', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  deleteAddressBook: (addressBookId: string) =>
+    request<void>(`/addressbooks/${addressBookId}`, {
+      method: 'DELETE',
+    }),
+  getContacts: (addressBookId: string) =>
+    request<Contact[]>(`/addressbooks/${addressBookId}/contacts`),
+  createContact: (addressBookId: string, input: CreateContactInput) =>
+    request<Contact>(`/addressbooks/${addressBookId}/contacts`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  updateContact: (addressBookId: string, uid: string, input: UpdateContactInput) =>
+    request<Contact>(`/addressbooks/${addressBookId}/contacts/${encodeURIComponent(uid)}`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    }),
+  deleteContact: (addressBookId: string, uid: string, href: string, etag: string | null) => {
+    const params = new URLSearchParams({ href })
+    if (etag) params.set('etag', etag)
+    return request<void>(`/addressbooks/${addressBookId}/contacts/${encodeURIComponent(uid)}?${params.toString()}`, {
+      method: 'DELETE',
+    })
+  },
 }
