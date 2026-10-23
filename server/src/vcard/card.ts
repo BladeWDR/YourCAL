@@ -313,6 +313,70 @@ export function renameCategory(text: string, from: string, to: string): string |
   return changed ? out : null
 }
 
+/** Removes `p.raw` from `text` together with the line break that follows it. */
+function dropLine(text: string, raw: string): string | null {
+  const at = text.indexOf(raw)
+  if (at === -1) return null
+  const after = text.slice(at + raw.length)
+  const brk = /^(\r\n|\n|\r)/.exec(after)
+  return text.slice(0, at) + after.slice(brk ? brk[0].length : 0)
+}
+
+/**
+ * Adds or removes one group on a card by touching only its CATEGORIES line(s);
+ * every other byte of the card is left alone. Returns null when there is
+ * nothing to change (already a member / not a member) or a line can't be
+ * located verbatim.
+ */
+export function editCategories(text: string, change: { add?: string; remove?: string }): string | null {
+  const props = parseVCard(text).props.filter((p) => p.name === 'CATEGORIES')
+  const rewrite = (p: VProp, list: string[]): string =>
+    foldLine(`${p.raw.slice(0, p.raw.indexOf(':')).replace(/\r\n[ \t]/g, '')}:${list.map(escapeText).join(',')}`)
+
+  if (change.add) {
+    const name = change.add
+    if (props.some((p) => splitList(p.value).includes(name))) return null
+    const first = props[0]
+    if (first) {
+      if (!text.includes(first.raw)) return null
+      return text.replace(first.raw, () => rewrite(first, [...splitList(first.value), name]))
+    }
+    const end = /^END:VCARD/im.exec(text)
+    if (!end) return null
+    const nl = text.includes('\r\n') ? '\r\n' : '\n'
+    return `${text.slice(0, end.index)}CATEGORIES:${escapeText(name)}${nl}${text.slice(end.index)}`
+  }
+
+  if (change.remove) {
+    const name = change.remove
+    let out = text
+    let changed = false
+    for (const p of props) {
+      const list = splitList(p.value)
+      if (!list.includes(name)) continue
+      const rest = list.filter((c) => c !== name)
+      if (rest.length === 0) {
+        const dropped = dropLine(out, p.raw)
+        if (dropped === null) return null
+        out = dropped
+      } else {
+        if (!out.includes(p.raw)) return null
+        out = out.replace(p.raw, () => rewrite(p, rest))
+      }
+      changed = true
+    }
+    return changed ? out : null
+  }
+  return null
+}
+
+/** Gives the card a different UID (inserting one if missing); used for copies so the two cards stay distinct. */
+export function replaceUid(text: string, uid: string): string {
+  const existing = parseVCard(text).props.find((p) => p.name === 'UID')
+  if (existing && text.includes(existing.raw)) return text.replace(existing.raw, () => `UID:${uid}`)
+  return ensureUid(text, uid).card
+}
+
 export function emptyContactInput(): ContactInput {
   return {
     name: emptyName(),

@@ -39,6 +39,7 @@ export class DavContactStore implements ContactStore {
     const readOnly = await Promise.all(books.map((b) => isCollectionReadOnly(ctx, String(b.url))))
     return books.map((b, i) => ({
       id: encodeId(String(b.url)),
+      url: String(b.url),
       displayName: typeof b.displayName === 'string' && b.displayName ? b.displayName : 'Contacts',
       description: typeof (b as { description?: unknown }).description === 'string'
         ? ((b as { description: string }).description || null)
@@ -69,7 +70,7 @@ export class DavContactStore implements ContactStore {
 </D:mkcol>`,
     })
     if (!response.ok) throw new Error(`Failed to create address book: ${response.status} ${response.statusText}`)
-    return { id: encodeId(url), displayName, description: null, readOnly: false, ctag: null }
+    return { id: encodeId(url), url, displayName, description: null, readOnly: false, ctag: null }
   }
 
   async deleteAddressBook(ctx: DavContext, addressBookId: string): Promise<void> {

@@ -1,16 +1,29 @@
 import { createHash } from 'node:crypto'
 import type {
+  AddressBook,
   Contact,
   CreateAddressBookInput,
   ContactInput,
   DeleteContactInput,
+  GroupMembersInput,
+  GroupMembersResult,
   ImportResult,
   RenameGroupInput,
   RenameGroupResult,
+  TransferContactInput,
   UpdateContactInput,
 } from '@yourdav/shared'
 import type { FastifyInstance, FastifyReply } from 'fastify'
-import { applyContactInput, ensureUid, photoFromCard, renameCategory, splitVcf, vcardToContact } from '../vcard/card.js'
+import {
+  applyContactInput,
+  editCategories,
+  ensureUid,
+  photoFromCard,
+  renameCategory,
+  replaceUid,
+  splitVcf,
+  vcardToContact,
+} from '../vcard/card.js'
 import type { DavContext } from '../dav/context.js'
 import { EtagConflictError } from '../store/errors.js'
 import { encodeId } from '../store/idCodec.js'
@@ -229,6 +242,88 @@ export async function addressBookRoutes(app: FastifyInstance): Promise<void> {
         result.updated++
       } catch (e) {
         req.log.warn({ err: e }, 'group rename failed for a card')
+        result.failed++
+      }
+    }
+    return reply.send(result)
+  })
+
+  // Moves a contact to another address book, or copies it (copies get a new UID
+  // so the two cards stay distinct). A move is create-then-delete; if the delete
+  // fails the new card is removed again so the contact never ends up in both.
+  app.post<{ Params: { id: string }; Body: TransferContactInput }>('/:id/contacts/transfer', async (req, reply) => {
+    const dav = requireSession(req, reply)
+    if (!dav) return
+    const { href, etag, targetBookId, mode } = req.body ?? ({} as Partial<TransferContactInput>)
+    if (!href || !etag || !targetBookId || (mode !== 'move' && mode !== 'copy')) {
+      return reply.code(400).send({ error: 'bad_request', message: 'href, etag, targetBookId and mode are required' })
+    }
+    if (mode === 'move' && targetBookId === req.params.id) {
+      return reply.code(400).send({ error: 'bad_request', message: 'Choose a different address book' })
+    }
+    const books = await contactStore.discoverAddressBooks(dav)
+    const source: AddressBook | undefined = books.find((b) => b.id === req.params.id)
+    const target: AddressBook | undefined = books.find((b) => b.id === targetBookId)
+    if (!source || !target) return reply.code(404).send({ error: 'not_found', message: 'Address book not found' })
+    if (target.readOnly || (mode === 'move' && source.readOnly)) {
+      return reply.code(403).send({ error: 'forbidden', message: 'That address book is read-only' })
+    }
+
+    try {
+      const current = await contactStore.getCard(dav, source.id, href)
+      if (current.etag && current.etag !== etag) throw new EtagConflictError('Contact changed')
+      const vcard = mode === 'copy' ? replaceUid(current.vcard, crypto.randomUUID()) : current.vcard
+      const created = await contactStore.createCard(dav, target.id, vcard)
+      const card = created.etag ? created : await contactStore.getCard(dav, target.id, created.href)
+      if (mode === 'move') {
+        try {
+          await contactStore.deleteCard(dav, source.id, href, current.etag)
+        } catch (e) {
+          await contactStore.deleteCard(dav, target.id, card.href, card.etag).catch(() => undefined)
+          throw e
+        }
+      }
+      return reply.code(201).send(toContact(target.id, card))
+    } catch (e) {
+      if (e instanceof EtagConflictError) {
+        return reply
+          .code(412)
+          .send({ error: 'conflict', message: 'This contact was changed elsewhere. Reload and try again.' })
+      }
+      throw e
+    }
+  })
+
+  // Adds or removes one group on many contacts. Only the CATEGORIES line of
+  // each card is edited, so nothing else on the card is renormalised.
+  app.post<{ Params: { id: string }; Body: GroupMembersInput }>('/:id/groups/members', async (req, reply) => {
+    const dav = requireSession(req, reply)
+    if (!dav) return
+    const body = req.body
+    const add = typeof body?.add === 'string' ? body.add.trim() : ''
+    const remove = typeof body?.remove === 'string' ? body.remove.trim() : ''
+    const items = Array.isArray(body?.items) ? body.items : []
+    if (!!add === !!remove || add.length > 200 || remove.length > 200) {
+      return reply.code(400).send({ error: 'bad_request', message: 'Give exactly one group to add or remove' })
+    }
+    if (items.length === 0 || items.length > 200 || items.some((i) => typeof i?.href !== 'string' || !i.href)) {
+      return reply.code(400).send({ error: 'bad_request', message: 'items must list 1 to 200 contacts' })
+    }
+    if (!(await writable(dav, req.params.id, reply))) return
+
+    const result: GroupMembersResult = { updated: 0, unchanged: 0, failed: 0 }
+    for (const item of items) {
+      try {
+        const card = await contactStore.getCard(dav, req.params.id, item.href)
+        const next = editCategories(card.vcard, add ? { add } : { remove })
+        if (next === null) {
+          result.unchanged++
+          continue
+        }
+        await contactStore.updateCard(dav, req.params.id, card.href, card.etag, next)
+        result.updated++
+      } catch (e) {
+        req.log.warn({ err: e }, 'group membership change failed for a card')
         result.failed++
       }
     }

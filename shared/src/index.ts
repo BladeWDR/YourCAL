@@ -206,6 +206,8 @@ export interface UnsubscribeResult {
 export interface AddressBook {
   /** Opaque id; the client echoes it back and never parses it. */
   id: string
+  /** The collection's CardDAV URL, for pointing other clients at it. */
+  url: string
   displayName: string
   description: string | null
   readOnly: boolean
@@ -309,5 +311,27 @@ export interface RenameGroupInput {
 
 export interface RenameGroupResult {
   updated: number
+  failed: number
+}
+
+export interface TransferContactInput {
+  href: string
+  etag: string
+  targetBookId: string
+  /** 'move' deletes the original; 'copy' leaves it and gives the copy a new UID. */
+  mode: 'move' | 'copy'
+}
+
+export interface GroupMembersInput {
+  items: { href: string; etag: string }[]
+  /** Exactly one of add / remove. */
+  add?: string
+  remove?: string
+}
+
+export interface GroupMembersResult {
+  updated: number
+  /** Cards that were already in (or not in) the group. */
+  unchanged: number
   failed: number
 }

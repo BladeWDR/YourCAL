@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { applyContactInput, emptyContactInput, ensureUid, photoFromCard, renameCategory, splitVcf, vcardToContact } from './card.js'
+import {
+  applyContactInput,
+  editCategories,
+  emptyContactInput,
+  ensureUid,
+  photoFromCard,
+  renameCategory,
+  replaceUid,
+  splitVcf,
+  vcardToContact,
+} from './card.js'
 
 const V3 = [
   'BEGIN:VCARD',
@@ -187,5 +197,63 @@ describe('renameCategory', () => {
   it('escapes commas in the new name and returns null when the card lacks the group', () => {
     expect(renameCategory(V3, 'work', 'a,b')).toContain('CATEGORIES:friends,a\\,b')
     expect(renameCategory(V3, 'nope', 'x')).toBeNull()
+  })
+})
+
+describe('editCategories', () => {
+  const card = (...lines: string[]) => ['BEGIN:VCARD', 'VERSION:3.0', 'UID:u', 'FN:X', ...lines, 'END:VCARD', ''].join('\r\n')
+
+  it('adds a group to an existing CATEGORIES line and touches nothing else', () => {
+    const before = card('CATEGORIES:friends', 'X-CUSTOM;FOO=bar:keep', 'NOTE:hi')
+    const after = editCategories(before, { add: 'work' })
+    expect(after).toBe(card('CATEGORIES:friends,work', 'X-CUSTOM;FOO=bar:keep', 'NOTE:hi'))
+  })
+
+  it('inserts a CATEGORIES line before END when the card has none', () => {
+    expect(editCategories(card('NOTE:hi'), { add: 'work' })).toBe(card('NOTE:hi', 'CATEGORIES:work'))
+  })
+
+  it('keeps LF-only cards LF-only', () => {
+    const lf = 'BEGIN:VCARD\nVERSION:3.0\nFN:X\nEND:VCARD\n'
+    expect(editCategories(lf, { add: 'a' })).toBe('BEGIN:VCARD\nVERSION:3.0\nFN:X\nCATEGORIES:a\nEND:VCARD\n')
+  })
+
+  it('escapes commas in a new group name', () => {
+    expect(editCategories(card(), { add: 'a,b' })).toContain('CATEGORIES:a\\,b')
+  })
+
+  it('returns null when the card is already in the group', () => {
+    expect(editCategories(card('CATEGORIES:friends,work'), { add: 'work' })).toBeNull()
+  })
+
+  it('removes one group from several', () => {
+    expect(editCategories(card('CATEGORIES:friends,work'), { remove: 'friends' })).toBe(card('CATEGORIES:work'))
+  })
+
+  it('drops the whole line when the last group is removed', () => {
+    expect(editCategories(card('CATEGORIES:friends', 'NOTE:hi'), { remove: 'friends' })).toBe(card('NOTE:hi'))
+  })
+
+  it('returns null when removing a group the card is not in', () => {
+    expect(editCategories(card('CATEGORIES:friends'), { remove: 'work' })).toBeNull()
+    expect(editCategories(card(), { remove: 'work' })).toBeNull()
+  })
+
+  it('returns null when asked to do nothing', () => {
+    expect(editCategories(card('CATEGORIES:a'), {})).toBeNull()
+  })
+})
+
+describe('replaceUid', () => {
+  it('swaps the UID and leaves the rest alone', () => {
+    const out = replaceUid(V3, 'new-uid')
+    expect(out).toContain('UID:new-uid\r\n')
+    expect(out).not.toContain('abc-123')
+    expect(out.replace('UID:new-uid', 'UID:abc-123')).toBe(V3)
+  })
+
+  it('adds a UID when the card has none', () => {
+    const out = replaceUid('BEGIN:VCARD\r\nVERSION:3.0\r\nFN:X\r\nEND:VCARD\r\n', 'n1')
+    expect(out).toContain('UID:n1')
   })
 })
