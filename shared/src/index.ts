@@ -197,3 +197,68 @@ export interface UnsubscribeResult {
   // (i.e. the owner actually does something new with it).
   dismissedPending: { pathOrToken: string; dismissedAt: number } | null
 }
+
+export interface AddressBook {
+  id: string // base64url encoded url
+  displayName: string
+  ctag: string | null
+  readOnly: boolean
+}
+
+export interface ContactEmail {
+  type?: string
+  value: string
+}
+
+export interface ContactPhone {
+  type?: string
+  value: string
+}
+
+export interface ContactPostalAddress {
+  type?: string
+  street?: string
+  locality?: string
+  region?: string
+  postalCode?: string
+  country?: string
+}
+
+export interface ContactFields {
+  fn: string // Full formatted name (required by RFC 6350)
+  givenName?: string
+  familyName?: string
+  additionalName?: string
+  honorificPrefix?: string
+  honorificSuffix?: string
+  nickname?: string
+  organization?: string
+  title?: string
+  role?: string
+  emails: ContactEmail[]
+  phones: ContactPhone[]
+  addresses: ContactPostalAddress[]
+  notes?: string
+  bday?: string // YYYY-MM-DD
+  url?: string
+}
+
+export interface Contact extends ContactFields {
+  uid: string
+  href: string
+  etag: string | null
+  addressBookId: string
+}
+
+export type CreateContactInput = ContactFields
+
+export interface UpdateContactInput {
+  href: string
+  etag: string | null
+  fields: ContactFields
+}
+
+export interface CreateAddressBookInput {
+  displayName: string
+}
+

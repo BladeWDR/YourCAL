@@ -14,6 +14,7 @@ import { calendarRoutes } from './routes/calendars.js'
 import { searchRoutes } from './routes/search.js'
 import { sharingRoutes } from './routes/sharing.js'
 import { subscriptionRoutes } from './routes/subscriptions.js'
+import { contactRoutes } from './routes/contacts.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -88,6 +89,7 @@ async function main(): Promise<void> {
   await app.register(searchRoutes, { prefix: '/api/search' })
   await app.register(sharingRoutes, { prefix: '/api/sharing' })
   await app.register(subscriptionRoutes, { prefix: '/api/subscriptions' })
+  await app.register(contactRoutes, { prefix: '/api/addressbooks' })
 
   const clientDist = path.join(__dirname, '../../client/dist')
   await app.register(fastifyStatic, { root: clientDist })
