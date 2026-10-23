@@ -204,11 +204,14 @@ function toggleDefaultVisible(id: string): void {
         </select>
       </label>
 
-      <label class="dialog__field dialog__field--row">
+      <label
+        class="dialog__field dialog__field--row"
+        title="US: city, state ZIP. International: postal code before the city."
+      >
         <span>Address format</span>
         <select v-model="addressFormatModel">
-          <option value="us">US (city, state ZIP)</option>
-          <option value="intl">International (postal code, city)</option>
+          <option value="us">US</option>
+          <option value="intl">International</option>
         </select>
       </label>
 
