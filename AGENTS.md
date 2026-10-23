@@ -32,8 +32,8 @@ server's own RRULE/ETag validation, which is still only checked by hand.
   no systematic pass over every dialog / drag / resize path.
 - **Docker** image is unbuilt/unrun (no Docker on this host) — see below.
 - **Contacts UI** has been typechecked, built and driven end-to-end at the
-  API level against Radicale, but never clicked through in a real browser.
-  Baikal CardDAV is untested, and so is a CalDAV-only server (the
+  API level against Radicale and Baikal (Basic and Digest), but never clicked
+  through in a real browser. A CalDAV-only server is untested (the
   `hasContacts: false` path is unit-tested only).
 - **Contacts: address-book sharing, duplicate merge, and rename** are out of
   scope; create/delete exist.
@@ -847,8 +847,8 @@ Merged in from the separate YourContacts project. The shell (app switcher,
 `/contacts` route, master-detail layout, address-book sidebar, per-book client
 cache) came from PR #68 by BladeWDR; the data layer is YourContacts' and
 replaced that PR's ical.js-based one. Verified end-to-end with curl against a
-real Radicale (create/list/edit/delete, stale-etag 412, Apple-style cards);
-**not** against Baikal, and the UI is not browser-tested.
+real Radicale 3.x and Baikal 0.11.1 (see "Baikal" below); the UI is not
+browser-tested.
 
 - **One session, two protocols.** `createClient(ctx, 'caldav' | 'carddav')` in
   `server/src/dav/client.ts` keeps one cached tsdav client per account *and*
@@ -870,6 +870,23 @@ real Radicale (create/list/edit/delete, stale-etag 412, Apple-style cards);
   its address book's path (`hrefInBook`, segment-boundary check) and
   throws `ForbiddenError` (-> 403) otherwise. Updates re-fetch the server's card
   and send `If-Match`; a stale etag is a 412.
+
+### Verified against Baikal 0.11.1
+
+Driven through the app's API with curl, once under Basic and once under
+Digest (`dav_auth_type`): login and CardDAV discovery (`/dav.php/`, default
+book `Default Address Book`), ACL-derived `readOnly: false`, contact create
+with photo, list, photo endpoint (`image/png`, `nosniff`), no-op edit of an
+Apple-style card (ORG, TYPE params, X-*/IMPP/PRODID kept), stale etag -> 412,
+`.vcf` export and re-import (UID dedupe, content-hash UID for UID-less cards),
+group rename, address-book create (extended `MKCOL`) and delete, delete of an
+undiscovered id -> 404, card href outside the book -> 403.
+
+Not covered on Baikal: a read-only address book (Baikal does not share address
+books, so none exists to test) and write conflicts from a second client.
+Changing `dav_auth_type` under a live session makes the stored auth method
+stale: the server rejects it and the app ends the session with a 401, which is
+the intended behaviour.
 
 ### vCard handling (important)
 

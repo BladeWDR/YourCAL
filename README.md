@@ -28,8 +28,8 @@ earlier release.
   photos, typed phones/emails/websites/addresses, `.vcf` import and export,
   read-only address books. Edits only touch the fields the editor manages —
   everything else on the card (custom `X-` properties, instant-message
-  handles, etc.) is preserved byte-for-byte. Contacts have so far only been
-  verified against Radicale.
+  handles, etc.) is preserved byte-for-byte. Contacts have been verified against
+  Radicale and Baikal (Basic and Digest auth).
 
 See [AGENTS.md](./AGENTS.md) for implementation details, known gaps, and
 open items.
