@@ -23,6 +23,7 @@ import '@fullcalendar/vue3/themes/classic/palette.css'
 import type { CalendarObject, EditScope, EventFields } from '@yourcal/shared'
 import { DateTime } from 'luxon'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import AppNavSwitcher from '../components/AppNavSwitcher.vue'
 import CalendarList from '../components/CalendarList.vue'
 import ConflictDialog from '../components/ConflictDialog.vue'
 import EventDetailPopover from '../components/EventDetailPopover.vue'
@@ -925,14 +926,7 @@ watch(enabledSubscriptionIds, (ids, oldIds) => {
 <template>
   <div class="layout">
     <aside class="sidebar">
-      <div class="sidebar__brand">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <rect x="3" y="4.5" width="18" height="16" rx="3" stroke="currentColor" stroke-width="1.6" />
-          <path d="M3 9.5h18" stroke="currentColor" stroke-width="1.6" />
-          <path d="M8 2.5v4M16 2.5v4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-        </svg>
-        <span>Calendar</span>
-      </div>
+      <AppNavSwitcher />
 
       <SearchBox @select="onSearchSelect" />
 
