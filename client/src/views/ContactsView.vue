@@ -4,7 +4,9 @@ import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { api, ApiRequestError } from '../api.js'
 import AppNavSwitcher from '../components/AppNavSwitcher.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
+import BookMenu from '../components/BookMenu.vue'
 import ContactAvatar from '../components/ContactAvatar.vue'
+import GroupMenu from '../components/GroupMenu.vue'
 import SettingsDialog from '../components/SettingsDialog.vue'
 import {
   ADDRESS_TYPES,
@@ -51,6 +53,11 @@ const selectedReadOnly = computed(() => {
   return c ? contactsStore.isReadOnly(c) : false
 })
 const createBookId = ref('')
+const selectMode = ref(false)
+const confirmingBatchDelete = ref(false)
+const working = ref(false)
+const status = ref<{ text: string; error: boolean } | null>(null)
+let statusTimer: ReturnType<typeof setTimeout> | undefined
 const showUrl = ref(false)
 const urlCopied = ref(false)
 const urlInput = ref<HTMLInputElement | null>(null)
@@ -170,6 +177,134 @@ async function onLogout(): Promise<void> {
 function selectContact(contact: Contact): void {
   contactsStore.selectedId = contact.id
   closeEditor()
+}
+
+// --- Selection, move/copy and batch actions ------------------------------
+
+function flash(text: string, error = false): void {
+  status.value = { text, error }
+  clearTimeout(statusTimer)
+  statusTimer = setTimeout(() => (status.value = null), error ? 8000 : 4000)
+}
+
+function plural(n: number, noun: string): string {
+  return `${n} ${noun}${n === 1 ? '' : 's'}`
+}
+
+/** Summarises a batch result as a status line. */
+function report(verb: string, r: { done: number; failed: number }, extra = ''): void {
+  if (r.failed === 0) flash(`${verb} ${plural(r.done, 'contact')}${extra}`)
+  else flash(`${verb} ${r.done}, ${r.failed} failed${extra}`, true)
+}
+
+const selecting = computed(() => selectMode.value || contactsStore.checkedIds.length > 0)
+const checked = computed(() => contactsStore.checkedContacts)
+const checkedWritable = computed(() => checked.value.length > 0 && checked.value.every((c) => !contactsStore.isReadOnly(c)))
+const allChecked = computed(
+  () => contactsStore.filteredContacts.length > 0 && contactsStore.checkedIds.length === contactsStore.filteredContacts.length,
+)
+
+function onRowClick(e: MouseEvent, contact: Contact): void {
+  if (e.shiftKey) contactsStore.checkRange(contact.id)
+  else if (e.ctrlKey || e.metaKey) contactsStore.toggleChecked(contact.id)
+  else selectContact(contact)
+}
+
+function onCheck(e: MouseEvent, contact: Contact): void {
+  if (e.shiftKey) contactsStore.checkRange(contact.id)
+  else contactsStore.toggleChecked(contact.id)
+}
+
+function toggleSelectAll(): void {
+  if (allChecked.value) contactsStore.clearChecked()
+  else contactsStore.checkAll()
+}
+
+function clearSelection(): void {
+  contactsStore.clearChecked()
+  selectMode.value = false
+}
+
+/** The one address book every contact in `list` shares, if they all share one. */
+function commonBookId(list: Contact[]): string | null {
+  const ids = new Set(list.map((c) => c.addressBookId))
+  return ids.size === 1 ? [...ids][0] : null
+}
+
+// Targets for the move/copy menu, for the contact in the detail pane...
+const detailMoveTargets = computed(() => {
+  const c = contactsStore.selectedContact
+  if (!c || contactsStore.isReadOnly(c)) return []
+  return contactsStore.writableBooks.filter((b) => b.id !== c.addressBookId)
+})
+const detailCopyTargets = computed(() => {
+  const c = contactsStore.selectedContact
+  return c ? contactsStore.writableBooks.filter((b) => b.id !== c.addressBookId) : []
+})
+// ...and for the ticked batch. Copying out of a read-only book is fine; moving is not.
+const batchMoveTargets = computed(() => {
+  if (!checkedWritable.value) return []
+  const only = commonBookId(checked.value)
+  return contactsStore.writableBooks.filter((b) => b.id !== only)
+})
+const batchCopyTargets = computed(() => {
+  const only = commonBookId(checked.value)
+  return contactsStore.writableBooks.filter((b) => b.id !== only)
+})
+const selectionGroups = computed(() => [...new Set(checked.value.flatMap((c) => c.categories))].sort())
+const allGroupNames = computed(() => contactsStore.groups.map((g) => g.name))
+
+async function guarded(fn: () => Promise<void>): Promise<void> {
+  if (working.value) return
+  working.value = true
+  try {
+    await fn()
+  } catch (err) {
+    flash(err instanceof Error ? err.message : 'Something went wrong', true)
+  } finally {
+    working.value = false
+  }
+}
+
+function bookName(id: string): string {
+  return contactsStore.booksById.get(id)?.displayName ?? 'the address book'
+}
+
+function onTransfer(bookId: string, mode: 'move' | 'copy'): Promise<void> {
+  const c = contactsStore.selectedContact
+  if (!c) return Promise.resolve()
+  return guarded(async () => {
+    await contactsStore.transferContact(c, bookId, mode)
+    flash(`${mode === 'move' ? 'Moved' : 'Copied'} ${c.fullName} to ${bookName(bookId)}`)
+  })
+}
+
+function onBatchTransfer(bookId: string, mode: 'move' | 'copy'): Promise<void> {
+  // A move skips contacts already in the target; there is nothing to do for them.
+  const list = checked.value.filter((c) => mode === 'copy' || c.addressBookId !== bookId)
+  return guarded(async () => {
+    const r = await contactsStore.transferContacts(list, bookId, mode)
+    contactsStore.clearChecked()
+    report(mode === 'move' ? 'Moved' : 'Copied', r, ` to ${bookName(bookId)}`)
+  })
+}
+
+function onBatchGroup(change: { add: string } | { remove: string }): Promise<void> {
+  const list = [...checked.value]
+  return guarded(async () => {
+    const r = await contactsStore.setGroup(list, change)
+    const name = 'add' in change ? change.add : change.remove
+    report('add' in change ? `Added to “${name}”:` : `Removed from “${name}”:`, r)
+  })
+}
+
+function onBatchDelete(): Promise<void> {
+  const list = [...checked.value]
+  confirmingBatchDelete.value = false
+  return guarded(async () => {
+    const r = await contactsStore.deleteContacts(list)
+    report('Deleted', r)
+  })
 }
 
 function openEditor(): void {
@@ -656,8 +791,55 @@ const contactCountLabel = computed(() => {
                 placeholder="Search contacts..."
               />
             </div>
-            <span class="contacts-count">{{ contactCountLabel }}</span>
+            <div class="contacts-list-header__row">
+              <span class="contacts-count">{{ contactCountLabel }}</span>
+              <button
+                type="button"
+                class="btn-text"
+                :aria-pressed="selectMode"
+                title="Tick contacts to move, copy, group, merge or delete several at once"
+                @click="selectMode ? clearSelection() : (selectMode = true)"
+              >
+                {{ selecting ? 'Done' : 'Select' }}
+              </button>
+            </div>
           </div>
+
+          <div v-if="contactsStore.checkedIds.length > 0" class="batch-bar">
+            <div class="batch-bar__top">
+              <strong>{{ contactsStore.checkedIds.length }} selected</strong>
+              <button type="button" class="btn-text" @click="toggleSelectAll">
+                {{ allChecked ? 'Select none' : 'Select all' }}
+              </button>
+            </div>
+            <div class="batch-bar__actions">
+              <BookMenu
+                label="Move / copy"
+                :move-targets="batchMoveTargets"
+                :copy-targets="batchCopyTargets"
+                @pick="onBatchTransfer"
+              />
+              <GroupMenu
+                v-if="checkedWritable"
+                :groups="allGroupNames"
+                :removable="selectionGroups"
+                @add="(name) => onBatchGroup({ add: name })"
+                @remove="(name) => onBatchGroup({ remove: name })"
+              />
+              <button
+                type="button"
+                class="btn btn-danger btn-sm"
+                :disabled="!checkedWritable || working"
+                :title="checkedWritable ? 'Delete the selected contacts' : 'Some are in a read-only address book'"
+                @click="confirmingBatchDelete = true"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+          <p v-if="status" class="list-status" :class="{ 'list-status--error': status.error }" role="status">
+            {{ status.text }}
+          </p>
 
           <div v-if="contactsStore.error" class="pane-state pane-state--error">{{ contactsStore.error }}</div>
           <div v-else-if="contactsStore.loading && contactsStore.contacts.length === 0" class="pane-state">Loading contacts...</div>
@@ -670,10 +852,22 @@ const contactCountLabel = computed(() => {
               v-for="contact in contactsStore.filteredContacts"
               :key="contact.id"
               class="contact-item"
-              :class="{ 'contact-item--active': contact.id === contactsStore.selectedId && !isCreating }"
-              @click="selectContact(contact)"
+              :class="{
+                'contact-item--active': contact.id === contactsStore.selectedId && !isCreating,
+                'contact-item--checked': contactsStore.checkedIds.includes(contact.id),
+              }"
+              @click="onRowClick($event, contact)"
             >
-              <ContactAvatar class="contact-item__avatar" :contact="contact" />
+              <div class="contact-item__lead" :class="{ 'contact-item__lead--selecting': selecting }">
+                <ContactAvatar class="contact-item__avatar" :contact="contact" />
+                <input
+                  type="checkbox"
+                  class="contact-item__check"
+                  :checked="contactsStore.checkedIds.includes(contact.id)"
+                  :aria-label="`Select ${contact.fullName}`"
+                  @click.stop="onCheck($event, contact)"
+                />
+              </div>
               <div class="contact-item__info">
                 <span class="contact-item__name">{{ contact.fullName }}</span>
                 <span class="contact-item__sub">
@@ -948,11 +1142,20 @@ const contactCountLabel = computed(() => {
                   <span v-for="g in contactsStore.selectedContact.categories" :key="g" class="chip">{{ g }}</span>
                 </p>
               </div>
-              <div v-if="!selectedReadOnly" class="detail-actions">
-                <button type="button" class="btn btn-secondary" @click="startEdit">Edit</button>
-                <button type="button" class="btn btn-danger" @click="confirmingDelete = contactsStore.selectedContact">
-                  Delete
-                </button>
+              <div class="detail-actions">
+                <template v-if="!selectedReadOnly">
+                  <button type="button" class="btn btn-secondary" @click="startEdit">Edit</button>
+                  <button type="button" class="btn btn-danger" @click="confirmingDelete = contactsStore.selectedContact">
+                    Delete
+                  </button>
+                </template>
+                <BookMenu
+                  v-if="detailMoveTargets.length || detailCopyTargets.length"
+                  label="Move / copy"
+                  :move-targets="detailMoveTargets"
+                  :copy-targets="detailCopyTargets"
+                  @pick="onTransfer"
+                />
               </div>
             </div>
 
@@ -1058,6 +1261,15 @@ const contactCountLabel = computed(() => {
       confirm-label="Delete"
       @confirm="onDeleteContact"
       @cancel="confirmingDelete = null"
+    />
+
+    <ConfirmDialog
+      v-if="confirmingBatchDelete"
+      title="Delete Contacts"
+      :message="`Are you sure you want to delete ${plural(contactsStore.checkedIds.length, 'contact')}? This can't be undone.`"
+      confirm-label="Delete"
+      @confirm="onBatchDelete"
+      @cancel="confirmingBatchDelete = false"
     />
 
     <ConfirmDialog
@@ -1903,5 +2115,82 @@ const contactCountLabel = computed(() => {
   font-size: 0.7rem;
   color: var(--color-text-faint);
   flex-shrink: 0;
+}
+
+/* Selection and batch actions */
+.contacts-list-header__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.contact-item__lead {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+}
+
+/* The checkbox sits over the avatar. While it is hidden it must not take
+   clicks (an invisible element still does), so pointer-events follows opacity. */
+.contact-item__check {
+  position: absolute;
+  inset: 0;
+  width: 18px;
+  height: 18px;
+  margin: auto;
+  opacity: 0;
+  pointer-events: none;
+  cursor: pointer;
+}
+
+.contact-item:hover .contact-item__check,
+.contact-item__lead--selecting .contact-item__check,
+.contact-item__check:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.contact-item:hover .contact-item__avatar,
+.contact-item__lead--selecting .contact-item__avatar {
+  opacity: 0;
+}
+
+.contact-item--checked {
+  background: var(--color-primary-soft);
+}
+
+.batch-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.6rem 0.85rem;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-hover);
+  font-size: 0.82rem;
+}
+
+.batch-bar__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.batch-bar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.list-status {
+  margin: 0;
+  padding: 0.45rem 0.85rem;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.list-status--error {
+  color: var(--color-danger, #c0392b);
 }
 </style>
