@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { useRoute } from 'vue-router'
+import { useSessionStore } from '../stores/session.js'
 
 const route = useRoute()
+const session = useSessionStore()
 </script>
 
 <template>
@@ -20,6 +22,7 @@ const route = useRoute()
     </RouterLink>
 
     <RouterLink
+      v-if="session.info?.hasContacts"
       to="/contacts"
       class="nav-switcher__tab"
       :class="{ 'nav-switcher__tab--active': route.name === 'contacts' || route.path.startsWith('/contacts') }"

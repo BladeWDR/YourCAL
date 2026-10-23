@@ -116,6 +116,9 @@ export interface SessionInfo {
   // Running release: the git tag (e.g. "v0.4.0") for a tagged image build,
   // or "dev" for anything else (untagged main builds, local runs).
   version: string
+  // Whether the account also has CardDAV address books; the Contacts half of
+  // the app is hidden when it does not.
+  hasContacts: boolean
 }
 
 export interface LoginRequest {

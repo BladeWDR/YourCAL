@@ -33,6 +33,10 @@ router.beforeEach(async (to) => {
   if (to.meta.requiresAuth && !session.info) {
     return { name: 'login' }
   }
+  // CalDAV-only account: there is no Contacts half to show.
+  if (to.name === 'contacts' && session.info && !session.info.hasContacts) {
+    return { name: 'calendar' }
+  }
   if (to.name === 'login' && session.info) {
     return { name: 'calendar' }
   }
